@@ -1,0 +1,1342 @@
+---
+title: "Análises do SIVEP-Gripe"
+author: 'Gestantes e puérperas'
+date: "`r format(Sys.time(), '%d/%B/%Y')`"
+output:   
+  pdf_document:
+    keep_tex: yes
+  word_document: default
+  html_document:
+    df_print: paged
+    self_contained: no
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Sobre a base de dados e pacotes do R utilizados
+
+ A seguir são carregados os pacotes do R (https://www.r-project.org) utilizados para filtragem e tratamento dos dados considerados no dashboard https://observatorioobstetrico.shinyapps.io/covid_gesta_puerp_br. 
+ 
+```{r pacotes, echo=TRUE, message=FALSE, warning =FALSE,error=FALSE, results='hide'}
+#carregar pacotes
+loadlibrary <- function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = T)
+    if (!require(x, character.only = TRUE))
+      stop("Package not found")
+  }
+}
+
+packages <-
+  c(
+    "readr",
+    "readxl",
+    "janitor",
+    "dplyr",
+    "forcats",
+    "stringr",
+    "lubridate",
+    "summarytools",
+    "magrittr",
+    "questionr",
+    "knitr",
+    "data.table",
+    "writexl",
+    "modelsummary"
+  )
+lapply(packages, loadlibrary)
+```
+
+A base de dados SIVEP-Gripe (Sistema de Informação da Vigilância Epidemiológica da Gripe) tem os registros dos casos e óbitos de SRAG (Síndrome Respiratória Aguda Grave). A notificação é compulsória para síndrome gripal (caracterizado por pelo menos dois dos seguintes sinais e sintomas: febre, mesmo que referida, calafrios, dor de garganta, dor de cabeça, tosse, coriza, distúrbios olfatórios ou de paladar) e que tem dispneia / desconforto respiratório ou pressão persistente no peito ou Saturação de O2 menor que 95\% no ar ambiente ou cor azulada dos lábios ou rosto. Indivíduos assintomáticos com confirmação laboratorial por biologia molecular ou exame imunológico para infecção por COVID-19 também são relatados.
+
+Para notificações no Sivep-Gripe, os casos hospitalizados em hospitais públicos e privados e todas as mortes devido a infecções respiratórias agudas graves, independentemente da hospitalização, devem ser considerados.
+
+A vigilância da SRAG no Brasil é desenvolvida pelo Ministério da Saúde (MS), por meio da Secretaria de Vigilância em Saúde (SVS), desde a pandemia de Influenza A (H1N1) em 2009. 
+Mais informações em https://coronavirus.saude.gov.br/definicao-de-caso-e-notificacao.
+
+Os dados do ano de 2020, 2021 e 2022 foram obtidos em 26/Janeiro/2022 no site https://opendatasus.saude.gov.br. Os dados de 2020, 2021 e 2022 são carregados e combinados abaixo:
+
+```{r,echo=FALSE, eval=TRUE, message=FALSE,warning =FALSE,error=FALSE,results='hide'}
+ memory.limit(999999)
+```
+
+```{r,echo=TRUE,message=FALSE,warning =FALSE,error=FALSE,results='hide'}
+######### carregando as bases de dados ###########
+ckanr::ckanr_setup("https://opendatasus.saude.gov.br")
+
+arqs <- ckanr::package_search("srag 2020")$results %>%
+  purrr::map("resources") %>%
+  purrr::map(purrr::keep, ~ .x$mimetype == "text/csv") %>%
+  purrr::map_chr(purrr::pluck, 1, "url")
+
+arqs2 <- ckanr::package_search("srag 2021")$results %>%
+  purrr::map("resources") %>%
+  purrr::map(purrr::keep, ~ .x$mimetype == "text/csv") %>%
+  purrr::map_chr(purrr::pluck, 2, "url")
+
+dados_a <- fread(arqs[1], sep = ";")
+
+dados_b <- fread(arqs[2], sep = ";")
+
+dados_c <- fread(arqs2[1], sep = ";")
+
+sem <- 13
+
+#### Concatenar dados 2020, 2021 e 2022 ##############
+dados_a <- dados_a %>%
+  mutate(FATOR_RISC = case_when(FATOR_RISC == 1 ~ "S",
+                                FATOR_RISC == 2 ~ "N"))
+dados_b <- dados_b %>%
+  mutate(FATOR_RISC = case_when(FATOR_RISC == 1 ~ "S",
+                                FATOR_RISC == 2 ~ "N"))
+
+dados_c <- dados_c %>%
+  mutate(FATOR_RISC = case_when(FATOR_RISC == 1 ~ "S",
+                                FATOR_RISC == 2 ~ "N"))
+# COD_IDADE de 2022 para character para padronizar com 2020 e 2021
+
+dados_c$COD_IDADE <- as.character(dados_c$COD_IDADE)
+
+dados1 <- dados_a %>%
+  full_join(dados_b) %>%
+  full_join(dados_c)
+
+#Criar variavel de ano do caso
+dados1 <-  dados1 %>%
+  dplyr::mutate(
+    dt_sint = as.Date(DT_SIN_PRI, format = "%d/%m/%Y"),
+    dt_nasc = as.Date(DT_NASC, format = "%d/%m/%Y"),
+    ano = lubridate::year(dt_sint),
+  )
+```
+ 
+Para acessar os pdf's com informações sobre as semanas epidemiológicas acesse: http://portalsinan.saude.gov.br/calendario-epidemiologico-2020/43-institucional/171-calendario-epidemiologico-2021.
+ 
+Há atualmente `r dim(dados1)[1]` observações na base de dados e são as variáveis:
+ 
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+names(dados1)
+```
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#funções que vamos usar para as medidas descritivas
+media <- function(x)
+  mean(x, na.rm = TRUE)
+mediana <- function(x)
+  median(x, na.rm = TRUE)
+DP <- function(x)
+  sd(x, na.rm = TRUE)
+minimo <- function(x)
+  base::min(x, na.rm = TRUE)
+maximo <- function(x)
+  base::max(x, na.rm = TRUE)
+q25 <- function(x)
+  stats::quantile(x, p = 0.25, na.rm = TRUE)
+q75 <- function(x)
+  stats::quantile(x, p = 0.75, na.rm = TRUE)
+IQR <- function(x)
+  round(q75(x) - q25(x), 2)
+n <- function(x)
+  sum(!is.na(x))
+faltantes <- function(x)
+  round(sum(is.na(x)), digits = 0)
+```
+
+# Filtragem e tratamento dos dados
+
+A variável que indica a classificação é a `CLASSI_FIN`, com as seguintes categorias: 1-SRAG por influenza, 2-SRAG por outro vírus respiratório, 3-SRAG por outro agente etiológico, 4-SRAG não especificado e 5-SRAG por COVID-19.
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequência para a classificação
+questionr::freq(
+  dados1$CLASSI_FIN,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para classificação do caso ", 
+        digits = 2) 
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#codificar campo em branco para classificação como 9
+dados1$CLASSI_FIN <-
+  ifelse(is.na(dados1$CLASSI_FIN) == TRUE, 9, dados1$CLASSI_FIN)
+```
+
+O próximo passo é identificar as pessoas gestantes. Para isso, vamos analisar a variável `CS_GESTANT`. Essa variável assume os valores: 1-1º Trimestre; 2-2º Trimestre; 3-3º Trimestre; 4-Idade Gestacional Ignorada; 5-Não; 6-Não se aplica; 9-Ignorado. 
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequência para gestação
+questionr::freq(
+  dados1$CS_GESTANT,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para variável 
+        sobre gestação", digits = 2) 
+```
+
+Há `r dim(dados1[dados1$CS_GESTANT==0, ])[1]` casos com `CS_GESTANT=0`, em que a categoria 0 não tem código no dicionário. 
+
+Vamos ver se há alguma inconsistência ao analisar essa variável conjuntamente com `CS_SEXO` (F-feminino, M-masculino e I-ignorado).
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequência para sexo
+questionr::freq(
+  dados1$CS_SEXO,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para sexo", digits = 2) 
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela cruzada para gestação e sexo
+table(dados1$CS_GESTANT, dados1$CS_SEXO)
+```
+
+```{r, echo=FALSE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+dados_aux <- dados1 %>%
+  filter((CS_GESTANT == 1 |
+            CS_GESTANT == 2 | CS_GESTANT == 3 | CS_GESTANT == 4) &
+           CS_SEXO == "M")
+```
+
+Veja que há `r dim(dados_aux)[1]` casos de `CS_SEXO=M` com `CS_GESTANT=1,2,3 ou 4`, como esperado. 
+
+A variável indicadora de puerpério é `PUERPERA`, com categorias 1-sim, 2-não e 9-Ignorado. 
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequencias para puerpério
+questionr::freq(
+  dados2$PUERPERA,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para variável indicadora de puérpera", 
+        digits = 2)
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela cruzada de puerpério e sexo
+table(dados1$PUERPERA, dados1$CS_SEXO)
+```
+
+```{r, echo=FALSE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+dados_aux <- dados1 %>% 
+  filter(PUERPERA == 1 & CS_SEXO=="M")
+```
+
+
+Veja que há `r dim(dados_aux)[1]` casos de `CS_SEXO=M` com `PUERPERA = 1` casos de puérpera e sexo masculino. 
+
+A próxima seleção é considerar só as pessoas do sexo feminino:
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+# Filtragem dos casos do sexo feminino
+dados3 <- dados1 %>% 
+  filter(CS_SEXO == "F")
+```
+
+Após essa seleção foram selecionados `r dim(dados3)[1]` casos. 
+
+
+Agora vamos criar a variável de trimestre gestacional ou puerpério. Veja que para puerpério (`puerp`) são considerados os casos não gestante ou ignorado com `PUERPERA = 1`. 
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Criação da variável classi_gesta_puerp para o momento gestacional ou puerpério
+dados3 <- dados3 %>%
+  mutate(
+    classi_gesta_puerp = case_when(
+      CS_GESTANT == 1  ~ "1tri",
+      CS_GESTANT == 2  ~ "2tri",
+      CS_GESTANT == 3  ~ "3tri",
+      CS_GESTANT == 4  ~ "IG_ig",
+      CS_GESTANT == 5 &
+        PUERPERA == 1 ~ "puerp",
+      CS_GESTANT == 9 & PUERPERA == 1 ~ "puerp",
+      TRUE ~ "não"
+    )
+  )
+```
+
+A última filtragem consiste em selecionar os casos de gestantes ou puérperas. 
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Seleção só dos casos de gestantes ou puérperas
+dados4 <- dados3 %>%
+  filter(classi_gesta_puerp != "não")
+```
+
+
+A próxima seleção é considerar gestantes e puérperas com idade maior que 10 e menor ou igual a 55 anos.
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#criando a nossa variável de ano como a diferença entre dt_sint e dt_nasc. 
+#Nos casos sem dt_nasc, consideramos 
+#o campo NU_IDADE_N
+dados4 <- dados4 %>% 
+  mutate(
+         idade = as.period(interval(start = dt_nasc, end = dt_sint))$year, 
+         idade_anos = ifelse(is.na(idade), NU_IDADE_N, idade)
+  )
+
+# Filtragem dos casos com 55 anos ou menos
+dados5 <- dados4 %>% 
+  filter(idade_anos > 9 & idade_anos <= 55)
+```
+
+Ficamos com `r dim(dados5)[1]` casos de gestantes e puérperas, distribuídas nos seguintes grupos de trimestre gestacional e puerpério:
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequência para grupo gestacional
+questionr::freq(
+  dados5$classi_gesta_puerp,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para variável
+        de trimestre gestacional ou puerpério", digits = 2)
+```
+
+
+No que segue tratamos as variáveis consideradas no Observatório Obstétrico Covid-19. 
+
+
+**Tipo de diagnóstico:**
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Caso diagnosticado por PCR 
+dados5 <- dados5 %>%
+  mutate(pcr_SN = case_when(
+    (PCR_SARS2 == 1) |
+      (
+        str_detect(DS_PCR_OUT, "SARS|COVID|COV|CORONA|CIVID") 
+      ) ~ "sim",
+    TRUE ~ "não"
+  ))
+
+
+#Identificar se diagnóstico por sorologia
+dados5$res_igg <-
+  ifelse(is.na(dados5$RES_IGG) == TRUE, 0, dados5$RES_IGG)
+
+dados5$res_igm <-
+  ifelse(is.na(dados5$RES_IGM) == TRUE, 0, dados5$RES_IGM)
+
+dados5$res_iga <-
+  ifelse(is.na(dados5$RES_IGA) == TRUE, 0, dados5$RES_IGA)
+
+dados5$sorologia_SN <-
+  ifelse(dados5$res_igg == 1 |
+           dados5$res_igm == 1 | dados5$res_iga == 1,
+         "sim",
+         "não")
+
+#Identificar se diagnosticado por antigenio
+dados5 <- dados5 %>%
+  mutate(antigeno_SN = case_when(
+    (AN_SARS2 == 1) | #positivo
+      (
+        str_detect(DS_AN_OUT, "SARS|COVID|COV|CORONA|CONA") 
+      )  ~ "sim",
+    TRUE ~ "não"
+  ))
+```
+
+A variável `classi_covid` identificao tipo de diagnóstico. Essa variável é válida apenas para os casos confirmados de SRAG por COVID-19 (`CLASSI_FIN=5`).
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Criação da variável de classificação da covid-19
+dados5 <- dados5 %>%
+  mutate(
+    classi_covid = case_when(
+      CLASSI_FIN == 5 & pcr_SN == "sim"  ~ "pcr",
+      CLASSI_FIN == 5 & pcr_SN == "não" &
+        antigeno_SN == "sim" ~ "antigenio",
+      CLASSI_FIN == 5 & sorologia_SN == "sim" &
+        antigeno_SN == "não" &
+        pcr_SN == "não" ~ "sorologia",
+      CLASSI_FIN != 5 ~ "não", #não é outro agente etiológico ou não especificado
+      TRUE ~ "outro"
+    )
+  )
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequências para tipo de diagnóstico 
+questionr::freq(
+  dados5$classi_covid,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para o tipo de diagnóstico", 
+        digits = 2)
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+ctable(dados5$CLASSI_FIN, dados5$classi_covid, total = FALSE)
+```
+
+**Região do Brasil:**
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Criação da variável de região
+regions <- function(state) {
+  southeast <- c("SP", "RJ", "ES", "MG")
+  south <- c("PR", "SC", "RS")
+  central <- c("GO", "MT", "MS", "DF")
+  northeast <-
+    c("AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE")
+  north <- c("AC", "AP", "AM", "PA", "RO", "RR", "TO")
+  out <-
+    ifelse(any(state == southeast),
+           "southeast",
+           ifelse(any(state == south),
+                  "south",
+                  ifelse(
+                    any(state == central),
+                    "central",
+                    ifelse(any(state == northeast),
+                           "northeast", "north")
+                  )))
+  return(out)
+}
+
+dados5$region <- sapply(dados5$SG_UF, regions)
+dados5$region <-
+  ifelse(is.na(dados5$region) == TRUE, 0, dados5$region)
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequências para região
+questionr::freq(
+  dados5$region,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para a região do Brasil", digits = 2)
+```
+
+Veja que há `r dim(dados5[dados5$region==0, ])[1]` casos sem a informação da região do país (codificado como 0).
+
+No que segue, tratamos as variáveis de caracterização, sintomas, comorbidades, desfechos e variáveis de tempo.
+
+## Variáveis de caracterização
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Raça
+dados5 <-  dados5 %>%
+  mutate(
+    raca = case_when(
+      CS_RACA == 1 ~ "branca",
+      CS_RACA == 2 ~ "preta",
+      CS_RACA == 3 ~ "amarela",
+      CS_RACA == 4 ~ "parda",
+      CS_RACA == 5 ~ "indigena",
+      TRUE ~ NA_character_
+    )
+  )
+
+#Escolaridade
+dados5 <-  dados5 %>%
+  mutate(
+    escol = case_when(
+      CS_ESCOL_N == 0 ~ "sem escol",
+      CS_ESCOL_N == 1 ~ "fund1",
+      CS_ESCOL_N == 2 ~ "fund2",
+      CS_ESCOL_N == 3 ~ "medio",
+      CS_ESCOL_N == 4 ~ "superior",
+      TRUE ~ NA_character_
+    )
+  )
+
+#Faixa etária
+dados5 <-  dados5 %>%
+  mutate(
+    faixa_et = case_when(
+      NU_IDADE_N <= 19 ~ "<20",
+      NU_IDADE_N >= 20
+      & NU_IDADE_N <= 34 ~ "20-34",
+      NU_IDADE_N >= 35 ~ ">=35",
+      TRUE ~ NA_character_
+    )
+  )
+dados5$faixa_et <-
+  factor(dados5$faixa_et, levels = c("<20", "20-34", ">=35"))
+
+#Internação no hospital
+dados5 <-  dados5 %>%
+  mutate(hospital = case_when(HOSPITAL == 1 ~ "sim",
+                              HOSPITAL == 2 ~ "não",
+                              TRUE ~ NA_character_))
+
+#Histórico de viagem
+dados5 <-  dados5 %>%
+  mutate(hist_viagem = case_when(HISTO_VGM == 1 ~ "sim",
+                                 HISTO_VGM == 2 ~ "não",
+                                 TRUE ~ NA_character_))
+
+#Síndrome gripal evoluída para SRAG
+dados5 <-  dados5 %>%
+  mutate(sg_para_srag = case_when(SURTO_SG == 1 ~ "sim",
+                                  SURTO_SG == 2 ~ "não",
+                                  TRUE ~ NA_character_))
+
+#Infecção adquirida no hospital
+dados5 <-  dados5 %>%
+  mutate(inf_inter = case_when(NOSOCOMIAL == 1 ~ "sim",
+                               NOSOCOMIAL == 2 ~ "não",
+                               TRUE ~ NA_character_))
+
+#Contato com ave ou suíno
+dados5 <-  dados5 %>%
+  mutate(cont_ave_suino = case_when(AVE_SUINO == 1 ~ "sim",
+                                    AVE_SUINO == 2 ~ "não",
+                                    TRUE ~ NA_character_))
+
+#Vacina para gripe
+dados5 <-  dados5 %>%
+  mutate(vacina = case_when(VACINA == 1 ~ "sim",
+                            VACINA == 2 ~ "não",
+                            TRUE ~ NA_character_))
+
+dados5 <-  dados5 %>%
+  mutate(vacina_cov = case_when(VACINA_COV == 1 ~ "sim",
+                            VACINA_COV == 2 ~ "não",
+                            TRUE ~ NA_character_))
+
+#Antiviral
+dados5 <-  dados5 %>%
+  mutate(
+    antiviral = case_when(
+      ANTIVIRAL == 1 ~ "Oseltamivir",
+      ANTIVIRAL == 2 ~ "Zanamivir",
+      TRUE ~ NA_character_
+    )
+  )
+
+#Zona de residência
+dados5 <-  dados5 %>%
+  mutate(zona = case_when(CS_ZONA == 1 ~ "urbana",
+                          CS_ZONA == 2 ~ "rural",
+                          CS_ZONA == 3 ~ "periurbana",
+                                  TRUE ~ NA_character_))
+
+
+#Se mudança de município para atendimento
+dados5 <- dados5 %>%
+  mutate(mudou_muni = case_when((CO_MUN_RES == CO_MU_INTE) &
+                                  !is.na(CO_MU_INTE) &
+                                  !is.na(CO_MUN_RES) ~ "não",
+                                (CO_MUN_RES != CO_MU_INTE) &
+                                  !is.na(CO_MU_INTE) &
+                                  !is.na(CO_MUN_RES) ~ "sim",
+                                TRUE ~ NA_character_)
+  )
+```
+
+## Sintomas
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Febre
+dados5 <-  dados5 %>%
+  mutate(febre = case_when(FEBRE == 1 ~ "sim",
+                           FEBRE == 2 ~ "não",
+                           TRUE ~ NA_character_))
+
+#Tosse
+dados5 <-  dados5 %>%
+  mutate(tosse = case_when(TOSSE == 1 ~ "sim",
+                           TOSSE == 2 ~ "não",
+                           TRUE ~ NA_character_))
+
+#Garganta
+dados5 <-  dados5 %>%
+  mutate(garganta = case_when(GARGANTA == 1 ~ "sim",
+                              GARGANTA == 2 ~ "não",
+                              TRUE ~ NA_character_))
+
+#Dispneia
+dados5 <-  dados5 %>%
+  mutate(dispneia = case_when(DISPNEIA == 1 ~ "sim",
+                              DISPNEIA == 2 ~ "não",
+                              TRUE ~ NA_character_))
+
+#Desconforto respiratório
+dados5 <-  dados5 %>%
+  mutate(desc_resp = case_when(DESC_RESP == 1 ~ "sim",
+                               DESC_RESP == 2 ~ "não",
+                               TRUE ~ NA_character_))
+
+#Saturação
+dados5 <-  dados5 %>%
+  mutate(saturacao = case_when(SATURACAO == 1 ~ "sim",
+                               SATURACAO == 2 ~ "não",
+                               TRUE ~ NA_character_))
+
+#Diarréia
+dados5 <-  dados5 %>%
+  mutate(diarreia = case_when(DIARREIA == 1 ~ "sim",
+                              DIARREIA == 2 ~ "não",
+                              TRUE ~ NA_character_))
+
+#Vômito
+dados5 <-  dados5 %>%
+  mutate(vomito = case_when(VOMITO == 1 ~ "sim",
+                            VOMITO == 2 ~ "não",
+                            TRUE ~ NA_character_))
+
+#Dor abdominal
+dados5 <-  dados5 %>%
+  mutate(dor_abd = case_when(DOR_ABD == 1 ~ "sim",
+                             DOR_ABD == 2 ~ "não",
+                             TRUE ~ NA_character_))
+
+#Fadiga
+dados5 <-  dados5 %>%
+  mutate(fadiga = case_when(FADIGA == 1 ~ "sim",
+                            FADIGA == 2 ~ "não",
+                            TRUE ~ NA_character_))
+
+#Perda olfativa
+dados5 <-  dados5 %>%
+  mutate(perd_olft = case_when(PERD_OLFT == 1 ~ "sim",
+                               PERD_OLFT == 2 ~ "não",
+                               TRUE ~ NA_character_))
+
+#Perda do paladar
+dados5 <-  dados5 %>%
+  mutate(perd_pala = case_when(PERD_PALA == 1 ~ "sim",
+                               PERD_PALA == 2 ~ "não",
+                               TRUE ~ NA_character_))
+```
+
+
+## Comorbidades
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Cardiopatia
+dados5 <-  dados5 %>%
+  mutate(cardiopati = case_when(CARDIOPATI == 1 ~ "sim",
+                                CARDIOPATI == 2 ~ "não",
+                                TRUE ~ NA_character_))
+
+#Hematológica
+dados5 <-  dados5 %>%
+  mutate(hematologi = case_when(HEMATOLOGI == 1 ~ "sim",
+                                HEMATOLOGI == 2 ~ "não",
+                                TRUE ~ NA_character_))
+
+#Hepática
+dados5 <-  dados5 %>%
+  mutate(hepatica = case_when(HEPATICA == 1 ~ "sim",
+                              HEPATICA == 2 ~ "não",
+                              TRUE ~ NA_character_))
+
+#Asma
+dados5 <-  dados5 %>%
+  mutate(asma = case_when(ASMA == 1 ~ "sim",
+                          ASMA == 2 ~ "não",
+                          TRUE ~ NA_character_))
+
+#Diabetes
+dados5 <-  dados5 %>%
+  mutate(diabetes = case_when(DIABETES == 1 ~ "sim",
+                              DIABETES == 2 ~ "não",
+                              TRUE ~ NA_character_))
+
+#Neurológica
+dados5 <-  dados5 %>%
+  mutate(neuro = case_when(NEUROLOGIC == 1 ~ "sim",
+                           NEUROLOGIC == 2 ~ "não",
+                           TRUE ~ NA_character_))
+
+#Pneumopatia
+dados5 <-  dados5 %>%
+  mutate(pneumopati = case_when(PNEUMOPATI == 1 ~ "sim",
+                                PNEUMOPATI == 2 ~ "não",
+                                TRUE ~ NA_character_))
+
+#Imunossupressão
+dados5 <-  dados5 %>%
+  mutate(imunodepre = case_when(IMUNODEPRE == 1 ~ "sim",
+                                IMUNODEPRE == 2 ~ "não",
+                                TRUE ~ NA_character_))
+
+#Renal
+dados5 <-  dados5 %>%
+  mutate(renal = case_when(RENAL == 1 ~ "sim",
+                           RENAL == 2 ~ "não",
+                           TRUE ~ NA_character_))
+
+#Obesidade
+dados5 <-  dados5 %>%
+  mutate(obesidade = case_when(OBESIDADE == 1 ~ "sim",
+                               OBESIDADE == 2 ~ "não",
+                               TRUE ~ NA_character_))
+```
+
+## Desfechos
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#UTI
+dados5 <- dados5 %>%
+  mutate(uti = case_when(UTI == 1 ~ "sim",
+                         UTI == 2 ~ "não",
+                         TRUE ~ NA_character_))
+
+#Suporte ventilatório
+dados5 <- dados5 %>%
+  mutate(
+    suport_ven = case_when(
+      SUPORT_VEN == 1 ~ "invasivo",
+      SUPORT_VEN == 2 ~ "não invasivo",
+      SUPORT_VEN == 3 ~ "não",
+      TRUE ~ NA_character_
+    )
+  )
+
+dados5$suport_ven <- factor(dados5$suport_ven,
+                            levels = c("invasivo", "não invasivo", "não"))
+
+#Evolução
+dados5 <-
+  dados5 %>% mutate(
+    evolucao = case_when(
+      EVOLUCAO == 1 ~ "cura",
+      EVOLUCAO == 2 ~ "obito",
+      EVOLUCAO == 3 ~ "obito",
+      TRUE ~ NA_character_
+    )
+  )
+
+
+#Intubação SN 
+
+dados5 <-
+  dados5 %>% mutate(
+    intubacao_SN = case_when(SUPORT_VEN == 1 ~ "sim",
+                                  SUPORT_VEN == 2 ~ "não",
+                                  SUPORT_VEN == 3 ~ "não",
+                                  TRUE ~ NA_character_)
+  )
+
+#Classificação final
+dados5 <-
+  dados5 %>% mutate(
+    classi_fin1 = case_when(
+      CLASSI_FIN == 5 ~ "COVID-19",
+      CLASSI_FIN == 1 ~ "Influenza",
+      CLASSI_FIN == 2 ~ "Outro vírus",
+      CLASSI_FIN == 3 ~ "Outro agente",
+      TRUE ~ NA_character_
+    )
+  )
+
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequência para UTI
+questionr::freq(
+  dados5$uti,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para UTI", 
+        digits = 2) 
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequência para suporte ventilatório
+questionr::freq(
+  dados5$suport_ven,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para 
+        suporte ventilatório", 
+        digits = 2) 
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequência para evolução
+questionr::freq(
+  dados5$evolucao,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para evolução", 
+        digits = 2) 
+```
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#tabela de frequência para classificação final
+questionr::freq(
+  dados5$classi_fin1,
+  cum = FALSE,
+  total = TRUE,
+  na.last = FALSE,
+  valid = FALSE
+) %>%
+  kable(caption = "Tabela de frequências para classificação final", 
+        digits = 2) 
+```
+
+## Variáveis de tempo
+
+Vamos criar as variáveis de tempo: tempo entre primeiros sintomas e internação, tempo entre primeiros sintomas e notificação, tempo de permanência na UTI e tempo entre primeiros sintomas e evolução. Para isso, vamos primeiro tratar as variáveis de data no que segue. 
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+############# datas
+#dt_notific - Data do preenchimento da ficha de notificação
+#dt_sint - Data de 1ºs sintomas (deve ser menor que dt_notific)
+#dt_interna - Data da internação por SRAG
+#dt_pcr - Data do Resultado RT-PCR/outro método por Biologia Molecular
+#dt_entuti - Data da entrada na UTI
+#dt_saiduti - Data da saída da UTI 
+#dt_evoluca - Data da alta ou óbito
+#dt_digita - Preenchido automaticamente pelo sistema com a data da digitação da ficha. 
+##Não é a data de preenchimento da ficha manualmente e sim a data em que é digitado no sistema.
+dados5 <-  dados5 %>% 
+  mutate(dt_notific = as.Date(DT_NOTIFIC, format = "%d/%m/%Y"),
+         dt_sint = as.Date(DT_SIN_PRI, format = "%d/%m/%Y"),
+         dt_interna = as.Date(DT_INTERNA, format = "%d/%m/%Y"),
+         dt_pcr = as.Date(DT_PCR, format = "%d/%m/%Y"),
+         dt_entuti  = as.Date(DT_ENTUTI,  format = "%d/%m/%Y"),
+         dt_saiduti = as.Date(DT_SAIDUTI, format = "%d/%m/%Y"),
+         dt_evoluca = as.Date(DT_EVOLUCA, format = "%d/%m/%Y"),
+         dt_encerra = as.Date(DT_ENCERRA, format = "%d/%m/%Y"),
+         dt_digita = as.Date(DT_DIGITA, format = "%d/%m/%Y")
+  )
+
+hoje <- Sys.Date() #data de hoje
+
+#Arrumando as datas de internação inconsistentes. 
+#Quando for maior que a data de hoje e menor que a data dos primeiros sintomas é NA.
+dados5 <-  dados5 %>%
+  mutate(dt_interna = case_when((dt_interna <= hoje &
+                                   dt_interna >= dt_sint) ~ dt_interna,
+                                TRUE ~ NA_Date_
+  ))
+
+```
+
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Criando as variáveis de tempo a partir da diferença entre as datas. 
+# tempo_sintomas_hosp: tempo entre primeiros sintomas e internação.
+# tempo_sintomas_notific: tempo entre primeiros sintomas e notificação.
+# tempo_uti: tempo de permanência na UTI.
+# tempo_sint_evolucao: tempo entre primeiros sintomas e evolução
+dados5 <- dados5 %>% 
+  mutate(
+    tempo_sintomas_hosp = as.numeric(dt_interna - dt_sint),
+    tempo_sintomas_notific = as.numeric(dt_notific - dt_sint),
+    tempo_uti = as.numeric(dt_saiduti - dt_entuti),
+    tempo_sint_evolucao = as.numeric(dt_evoluca - dt_sint)
+  )  
+```
+
+
+Pela análise abaixo, podemos observar que há casos que foram para UTI, mas não tem informação de tempo de permanência. 
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Número de dados faltantes do tempo de UTI por grupo de UTI
+dados5 %>% 
+  group_by(uti) %>%
+  count(!is.na(tempo_uti)) 
+```
+
+
+Pela análise abaixo, podemos observar que há casos finalizados (óbito ou cura), mas não tem informação sobre o tempo entre primeiros sintomas e evolução. 
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Número de dados faltantes do tempo entre sintomas e evolucação por grupo de evolução
+dados5 %>% 
+  group_by(evolucao) %>%
+  count(!is.na(tempo_sint_evolucao))
+```
+
+A seguir apresentamos as medidas descritivas das quatro variáveis de tempo consideradas:
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+datasummary((
+  tempo_sintomas_hosp + tempo_sintomas_notific + tempo_uti + tempo_sint_evolucao
+) ~ 1 * (n + faltantes + media + DP + mediana + minimo + maximo),
+data = dados5,
+output = 'markdown'
+)
+```
+
+# Exportando as bases de dados
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+###### concatenando as informações base que usamos para o painel OOBr Covid-19
+dados5 <- dados5 %>% 
+  filter(as.Date(DT_SIN_PRI,format="%d/%m/%Y") < as.Date("01-04-2022",format="%d-%m-%Y")) 
+  
+
+dados6 <- dados5 %>% 
+  select(
+    SEM_PRI,
+    idade_anos,
+    SG_UF,
+    ID_MN_RESI,
+    CO_MUN_RES,
+    CO_MU_INTE,
+    CLASSI_FIN,
+    classi_fin1,
+    DT_SIN_PRI,
+    DT_EVOLUCA,
+    dt_evoluca, 
+    dt_sint,
+    ano,
+    classi_gesta_puerp,
+    classi_covid,
+    region,
+    raca,
+    escol,
+    mudou_muni,
+    zona,
+    faixa_et,
+    hospital,
+    hist_viagem,
+    sg_para_srag,
+    inf_inter,
+    cont_ave_suino,
+    vacina,
+    vacina_cov,
+    antiviral,
+    febre,
+    tosse,
+    garganta,
+    dispneia,
+    desc_resp,
+    saturacao,
+    diarreia,
+    vomito,
+    dor_abd,
+    fadiga,
+    perd_olft,
+    perd_pala,
+    cardiopati,
+    hematologi,
+    hepatica,
+    asma,
+    diabetes,
+    neuro,
+    pneumopati,
+    imunodepre,
+    renal,
+    obesidade,
+    uti,
+    suport_ven,
+    evolucao,
+    intubacao_SN,
+    dt_evoluca,
+    tempo_sintomas_hosp,
+    tempo_sintomas_notific,
+    tempo_uti,
+    tempo_sint_evolucao,
+    DOSE_1_COV,
+    DOSE_2_COV
+)
+
+#Exportando
+# write_xlsx(dados6, "dados6.xlsx")
+saveRDS(dados6,"dados6.rds")
+```
+
+
+
+```{r, echo=TRUE, eval= TRUE, message=FALSE, warning =FALSE, error=FALSE}
+#Dados gerais
+internacoes_covid <-
+  data.frame(
+    covid = c("confirmado", "não espec"),
+    int_covid = c(nrow(dados2[dados2$CLASSI_FIN ==
+                                5, ]),
+                  nrow(dados2[(dados2$CLASSI_FIN ==
+                                 4 |
+                                 dados2$CLASSI_FIN ==
+                                 9), ])),
+    fem_covid = c(nrow(dados3[dados3$CLASSI_FIN ==
+                                5, ]),
+                  nrow(dados3[(dados3$CLASSI_FIN ==
+                                 4 |
+                                 dados3$CLASSI_FIN ==
+                                 9), ]))
+  )
+
+#Exportando
+write_xlsx(internacoes_covid, "dados2_nrow.xlsx")
+```
+
+
+
+
+```{r, echo=FALSE, eval= TRUE, message=FALSE, warning =FALSE,error=FALSE, results='hide'}
+library(shiny)
+library(dplyr)
+library(magrittr)
+library(readxl)
+library(shinydashboard)
+library(questionr)
+library(kableExtra)
+library(ggplot2)
+library(highcharter)
+library(summarytools)
+library(abjData)
+library(leaflet)
+library(leaflet.extras)
+library(stringr)
+library(reactable)
+library(htmltools)
+
+
+#carregando a base de dados
+dados5 <- readxl::read_excel("dados5.xlsx")
+
+dados5$faixa_et <- factor(dados5$faixa_et,
+                          levels = c("<20", "20-34", ">=35"))
+
+dados5$escol <- factor(dados5$escol,
+                       levels = c("sem escol", "fund1", "fund2", "medio", "superior"))
+
+dados5$suport_ven <- factor(dados5$suport_ven,
+                            levels = c("não", "não invasivo", "invasivo"))
+
+dados5$raca_sel <- dados5$raca
+dados5$raca_sel <-
+  ifelse(is.na(dados5$raca_sel), "não informado", dados5$raca_sel)
+
+dados5$CLASSI_FIN <- as.factor(dados5$CLASSI_FIN)
+
+
+#para mapa das notificacoes
+#base com os nomes dos municipios
+aux_muni <- abjData::muni %>%
+  dplyr::select(muni_id,
+                muni_nm_clean,
+                uf_nm,
+                uf_sigla,
+                regiao_nm,
+                lon,
+                lat) %>%
+  mutate_at("muni_id", as.character)  %>%
+  mutate(cod_mun = stringr::str_sub(muni_id, 1, 6))
+
+dados_br_casos <-
+  function(selecao_classi = c("4", "5", "9"),
+           selecao_ano = c(2020, 2021)) {
+    aux <- dados5 %>%
+      dplyr::filter(CLASSI_FIN %in% selecao_classi, ano %in% selecao_ano) %>%
+      dplyr::mutate_at("CO_MUN_RES", as.character) %>%
+      dplyr::group_by(CO_MUN_RES) %>%
+      dplyr::summarize(ncasos = length(CLASSI_FIN)) %>%
+      dplyr::rename(cod_mun = CO_MUN_RES)
+    dados_br <- aux_muni %>%
+      dplyr::left_join(aux, by = "cod_mun") %>%
+      dplyr::mutate(ncasos = ifelse(is.na(ncasos), 0, ncasos))
+    return(dados_br)
+  }
+
+
+#mapa dos pontos
+mapa <-
+  function(selecao_classi = "5",
+           selecao_ano = c(2020, 2021)) {
+    m_aux <- dados_br_casos(selecao_classi, selecao_ano)
+    m <- m_aux %>%
+      dplyr::mutate(lab = paste0(muni_nm_clean, ": ", ncasos)) %>%
+      leaflet::leaflet() %>%
+      leaflet::addTiles()
+    
+    m_final <- m %>%
+      leaflet::addCircles(
+        lat = ~ lat,
+        lng = ~ lon,
+        radius = ~ ncasos,
+        weight = 1,
+        color = "purple",
+        popup = ~ lab
+      )
+    m_final
+  }
+
+
+# da %>%
+#   dplyr::group_by(regiao_nm, uf_nm) %>%
+#   dplyr::summarise(
+#     total = sum(n),
+#     total_80 = sum(n_80),
+#     .groups = "drop"
+#   )
+
+#por municipio
+dados_tab_muni <-
+  function(selecao_classi = c("4", "5", "9"),
+           selecao_ano = c(2020, 2021)) {
+    sivep_gest <- dados5 %>%
+      filter(CLASSI_FIN %in% selecao_classi, ano %in% selecao_ano) %>%
+      dplyr::mutate_at("CO_MUN_RES", as.character) %>%
+      dplyr::group_by(CO_MUN_RES) %>%
+      dplyr::summarize(
+        ncasos = length(CLASSI_FIN),
+        # casos notificados
+        nfinalizados = sum(!is.na(evolucao)),
+        #casos finalizados
+        nobitos = sum(evolucao == "Obito", na.rm = TRUE),
+        #Ã³bitos
+        nuti = sum(uti == "sim" &
+                     !is.na(evolucao), na.rm = TRUE),
+        #uti e casos finalizados
+        ninva = sum(suport_ven == "invasivo" &
+                      !is.na(evolucao), na.rm = TRUE),
+        #intubaÃ§ão e casos finalizados
+        nobito_uti = sum(uti == "sim" &
+                           evolucao == "Obito", na.rm = TRUE),
+        #uti e Ã³bito
+        n_naouti_obito = sum(uti == "não" &
+                               evolucao == "Obito", na.rm = TRUE),
+        #não uti e Ã³bito
+        n_naoventi_obito = sum((suport_ven == "não" |
+                                  suport_ven == 'não invasivo') &
+                                 evolucao == "Obito",
+                               na.rm = TRUE
+        ),
+        #não intub e Ã³bito
+        nfin_utivalido = sum(!is.na(evolucao) &
+                               !is.na(uti), na.rm = TRUE),
+        #vÃ¡lidos para uti
+        nfin_ventivalido = sum(!is.na(evolucao) &
+                                 !is.na(suport_ven), na.rm = TRUE),
+        #vÃ¡lidos para suporte venti
+        nobito_utivalido = sum(!is.na(uti) &
+                                 evolucao == "Obito", na.rm = TRUE),
+        #Ã³bito e uti vÃ¡lido
+        nobito_ventivalido = sum(!is.na(suport_ven) &
+                                   evolucao == "Obito", na.rm = TRUE) #Ã³bito e suporte vÃ¡lido
+      ) %>%
+      dplyr::rename(cod_mun = CO_MUN_RES)
+    
+    # Fazer a fusão dos dois bancos de dados
+    dados_br_tab <- aux_muni %>%
+      dplyr::left_join(sivep_gest, by = "cod_mun")
+    
+    dados_br_tab <- dados_br_tab %>%
+      dplyr::mutate(
+        ncasos = ifelse(is.na(ncasos), 0, ncasos),
+        nfinalizados = ifelse(is.na(nfinalizados), 0, nfinalizados),
+        nuti = ifelse(is.na(nuti), 0, nuti),
+        ninva = ifelse(is.na(ninva), 0, ninva),
+        nobitos = ifelse(is.na(nobitos), 0, nobitos),
+        nobito_uti = ifelse(is.na(nobito_uti), 0, nobito_uti),
+        n_naouti_obito = ifelse(is.na(n_naouti_obito), 0, n_naouti_obito),
+        n_naoventi_obito = ifelse(is.na(n_naoventi_obito), 0, n_naoventi_obito),
+        nfin_utivalido = ifelse(is.na(nfin_utivalido), 0, nfin_utivalido),
+        nfin_ventivalido = ifelse(is.na(nfin_ventivalido), 0, nfin_ventivalido),
+        nobito_utivalido = ifelse(is.na(nobito_utivalido), 0, nobito_utivalido),
+        nobito_ventivalido = ifelse(is.na(nobito_ventivalido), 0, nobito_ventivalido),
+        porc_uti = (nuti / nfin_utivalido),
+        porc_inva = (ninva / nfin_ventivalido),
+        porc_obito = (nobitos / nfinalizados),
+        porc_obito_uti = (nobito_uti / nuti),
+        porc_obito_nuti = (n_naouti_obito / nobito_utivalido),
+        porc_obito_nventi = (n_naoventi_obito / nobito_ventivalido)
+      ) %>%
+      dplyr::mutate(
+        porc_uti = round(porc_uti, 4),
+        porc_inva = round(porc_inva, 4),
+        porc_obito = round(porc_obito, 4),
+        porc_obito_uti = round(porc_obito_uti, 4),
+        porc_obito_nuti = round(porc_obito_nuti, 4),
+        porc_obito_nventi = round(porc_obito_nventi, 4),
+        porc_uti = ifelse(nfin_utivalido == 0, NA, porc_uti),
+        porc_inva = ifelse(nfin_ventivalido == 0, NA, porc_inva),
+        porc_obito = ifelse(nfinalizados == 0, NA, porc_obito),
+        porc_obito_uti = ifelse(nuti == 0, NA, porc_obito_uti),
+        porc_obito_nuti = ifelse(nobito_utivalido == 0, NA, porc_obito_nuti),
+        porc_obito_nventi = ifelse(nobito_ventivalido == 0, NA, porc_obito_nventi)
+      )
+    dados_tabela <- dados_br_tab %>%
+      select(
+        Municipio = muni_nm_clean,
+        Estado = uf_sigla,
+        Regiao = regiao_nm,
+        ncasos,
+        nfinalizados,
+        nuti,
+        nobitos,
+        ninva,
+        nobito_uti,
+        n_naouti_obito,
+        n_naoventi_obito,
+        nfin_utivalido,
+        nfin_ventivalido,
+        nobito_utivalido,
+        nobito_ventivalido,
+        porc_uti,
+        porc_inva,
+        porc_obito,
+        porc_obito_uti,
+        porc_obito_nuti,
+        porc_obito_nventi
+      )
+    return(dados_tabela)
+  }
+
+#aux dos estados
+regiao_tab <- aux_muni %>%
+  dplyr::group_by(uf_sigla) %>%
+  dplyr::summarise(regiao_nm = unique(regiao_nm))
+
+
+# por estado
+dados_tab_estado <-
+  function(selecao_classi = c("4", "5", "9"),
+           selecao_ano = c(2020, 2021)) {
+    sivep_gest <- dados5 %>%
+      filter(CLASSI_FIN %in% selecao_classi, ano %in% selecao_ano) %>%
+      dplyr::mutate_at("SG_UF", as.character) %>%
+      dplyr::group_by(SG_UF) %>%
+      dplyr::summarize(
+        ncasos = length(CLASSI_FIN),
+        # casos notificados
+        nfinalizados = sum(!is.na(evolucao)),
+        #casos finalizados
+        nobitos = sum(evolucao == "Obito", na.rm = TRUE),
+        #Ã³bitos
+        nuti = sum(uti == "sim" &
+                     !is.na(evolucao), na.rm = TRUE),
+        #uti e casos finalizados
+        ninva = sum(suport_ven == "invasivo" &
+                      !is.na(evolucao), na.rm = TRUE),
+        #intubaÃ§ão e casos finalizados
+        nobito_uti = sum(uti == "sim" &
+                           evolucao == "Obito", na.rm = TRUE),
+        #uti e Ã³bito
+        n_naouti_obito = sum(uti == "não" &
+                               evolucao == "Obito", na.rm = TRUE),
+        #não uti e Ã³bito
+        n_naoventi_obito = sum((suport_ven == "não" |
+                                  suport_ven == 'não invasivo') &
+                                 evolucao == "Obito",
+                               na.rm = TRUE
+        ),
+        #não intub e Ã³bito
+        nfin_utivalido = sum(!is.na(evolucao) &
+                               !is.na(uti), na.rm = TRUE),
+        #vÃ¡lidos para uti
+        nfin_ventivalido = sum(!is.na(evolucao) &
+                                 !is.na(suport_ven), na.rm = TRUE),
+        #vÃ¡lidos para suporte venti
+        nobito_utivalido = sum(!is.na(uti) &
+                                 evolucao == "Obito", na.rm = TRUE),
+        #Ã³bito e uti vÃ¡lido
+        nobito_ventivalido = sum(!is.na(suport_ven) &
+                                   evolucao == "Obito", na.rm = TRUE) #Ã³bito e suporte vÃ¡lido
+      ) %>%
+      dplyr::rename(uf_sigla = SG_UF)
+    
+    # Fazer a fusão dos dois bancos de dados
+    dados_br_tab <- regiao_tab %>%
+      dplyr::left_join(sivep_gest, by = "uf_sigla")
+    
+    dados_br_tab <- dados_br_tab %>%
+      dplyr::mutate(
+        ncasos = ifelse(is.na(ncasos), 0, ncasos),
+        nfinalizados = ifelse(is.na(nfinalizados), 0, nfinalizados),
+        nuti = ifelse(is.na(nuti), 0, nuti),
+        ninva = ifelse(is.na(ninva), 0, ninva),
+        nobitos = ifelse(is.na(nobitos), 0, nobitos),
+        nobito_uti = ifelse(is.na(nobito_uti), 0, nobito_uti),
+        n_naouti_obito = ifelse(is.na(n_naouti_obito), 0, n_naouti_obito),
+        n_naoventi_obito = ifelse(is.na(n_naoventi_obito), 0, n_naoventi_obito),
+        nfin_utivalido = ifelse(is.na(nfin_utivalido), 0, nfin_utivalido),
+        nfin_ventivalido = ifelse(is.na(nfin_ventivalido), 0, nfin_ventivalido),
+        nobito_utivalido = ifelse(is.na(nobito_utivalido), 0, nobito_utivalido),
+        nobito_ventivalido = ifelse(is.na(nobito_ventivalido), 0, nobito_ventivalido),
+        porc_uti = (nuti / nfin_utivalido),
+        porc_inva = (ninva / nfin_ventivalido),
+        porc_obito = (nobitos / nfinalizados),
+        porc_obito_uti = (nobito_uti / nuti),
+        porc_obito_nuti = (n_naouti_obito / nobito_utivalido),
+        porc_obito_nventi = (n_naoventi_obito / nobito_ventivalido)
+      ) %>%
+      dplyr::mutate(
+        porc_uti = round(porc_uti, 4),
+        porc_inva = round(porc_inva, 4),
+        porc_obito = round(porc_obito, 4),
+        porc_obito_uti = round(porc_obito_uti, 4),
+        porc_obito_nuti = round(porc_obito_nuti, 4),
+        porc_obito_nventi = round(porc_obito_nventi, 4),
+        porc_uti = ifelse(nfin_utivalido == 0, NA, porc_uti),
+        porc_inva = ifelse(nfin_ventivalido == 0, NA, porc_inva),
+        porc_obito = ifelse(nfinalizados == 0, NA, porc_obito),
+        porc_obito_uti = ifelse(nuti == 0, NA, porc_obito_uti),
+        porc_obito_nuti = ifelse(nobito_utivalido == 0, NA, porc_obito_nuti),
+        porc_obito_nventi = ifelse(nobito_ventivalido == 0, NA, porc_obito_nventi)
+      )
+    dados_tabela <- dados_br_tab %>%
+      select(
+        Estado = uf_sigla,
+        Regiao = regiao_nm,
+        ncasos,
+        nfinalizados,
+        nuti,
+        nobitos,
+        ninva,
+        nobito_uti,
+        n_naouti_obito,
+        n_naoventi_obito,
+        nfin_utivalido,
+        nfin_ventivalido,
+        nobito_utivalido,
+        nobito_ventivalido,
+        porc_uti,
+        porc_inva,
+        porc_obito,
+        porc_obito_uti,
+        porc_obito_nuti,
+        porc_obito_nventi
+      )
+    return(dados_tabela)
+  }
+
+
+dados_est <-
+  dados_tab_estado(selecao_classi =  "5",
+                   selecao_ano = c(2020, 2021))
+
+library(writexl)
+write_xlsx(dados_est, "dados_estados_porCovid.xlsx")
+
+```
+

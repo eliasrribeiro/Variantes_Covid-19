@@ -1,0 +1,353 @@
+---
+title: "Análise Descritiva das Variantes de COVID-19"
+author: "Elias Ribeiro"
+date: "15/02/2022"
+output:   
+  pdf_document:
+    toc: yes
+    toc_depth: "1"
+    keep_tex: yes
+  word_document: default
+  html_document:
+    df_print: paged
+    self_contained: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r pacotes, echo=FALSE, message=FALSE, warning =FALSE,error=FALSE, results='hide'}
+#load packages
+loadlibrary <- function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = T)
+    if (!require(x, character.only = TRUE))
+      stop("Package not found")
+  }
+}
+
+packages <-
+  c(
+    "dplyr",
+    "lubridate",
+    "readr",
+    "readxl",
+    "ggplot2",
+    "kableExtra",
+    "tables",
+    "questionr",
+    "car",
+    "data.table",
+    "magrittr",
+    "tidyverse",
+    "readxl",
+    "summarytools",
+    "modelsummary",
+    "RColorBrewer",
+    "zoo",
+    "grid",
+    "gridExtra",
+    "cowplot",
+    "effectsize",
+    "rcompanion",
+    "DescTools",
+    "geobr",
+    "scales",
+    "janitor"
+  )
+lapply(packages, loadlibrary)
+```
+
+\newpage
+
+# Os dados.
+
+Neste Relatório iremos fazer uma análise descritiva das variantes de COVID-19 dividas pelos períodos correspondentes a fim de tentar identificar padrões das variantes em relação ao numero de casos, obitos e internações.
+Estabelecemos a data pra variante delta de acordo com o site: https://agenciabrasil.ebc.com.br/saude/noticia/2021-11/pesquisa-mapeia-entrada-e-disseminacao-da-variante-delta-no-brasil# onde ele cita que a variante delta predominou no estado de São Paulo desde a 33ª semana epidemiológica (15 a 21/8).
+
+```{r dados, echo=TRUE, message=FALSE, warning =FALSE,error=FALSE, results='hide'}
+#dados filtrados e tratados observatório 09/02/2022
+# dados <- read_excel("dados6.xlsx")
+dados <- readRDS("dados6.rds")
+
+#criando variável chamada variante(original,gama,delta,omicron)
+in_gama <- as.Date("01-01-2021",format="%d-%m-%Y")
+in_delta <- as.Date("15-08-2021",format="%d-%m-%Y")
+in_ommi <- as.Date("01-01-2022",format="%d-%m-%Y")
+dados <- dados %>% 
+  mutate(variante = case_when(dt_sint < in_gama ~ "original",
+                              dt_sint >= in_gama & dt_sint < in_delta ~ "gama",
+                              dt_sint >= in_delta & dt_sint < in_ommi ~ "delta",
+                              dt_sint >= in_ommi ~ "omicron")) %>% 
+  mutate(month_year = paste(formatC(month(dt_sint), width=2, format="d", flag="0"),
+                            year(dt_sint),sep="/")) %>% 
+  mutate(mes = month(dt_sint)) 
+
+```
+
+# Frequência Variantes
+
+```{r, echo=TRUE, message=FALSE, warning =FALSE,error=FALSE}
+dados <-
+  dados %>% mutate(
+    classi_fin = case_when(
+      CLASSI_FIN == 5 ~ "COVID-19",
+      CLASSI_FIN == 1 ~ "Influenza",
+      CLASSI_FIN == 2 ~ "Outro vírus",
+      CLASSI_FIN == 3 ~ "Outro agente",
+      CLASSI_FIN == 4 ~ "Não especificado",
+      TRUE ~ NA_character_
+    )
+  )
+
+with(dados, ctable(classi_fin, variante, prop = "c", useNA = "no")) %>% kable()
+```
+
+```{r, echo=TRUE, message=FALSE, warning =FALSE,error=FALSE}
+dados <- dados %>% 
+  filter(CLASSI_FIN == "5")
+
+freq(dados$variante) 
+```
+
+Agora vamos fazer os gŕaficos de casos, obitos e internações para tentar identificarmos as variantes ao longo do tempo. 
+
+# Casos COVID-19 por mês 
+
+```{r, echo=FALSE, message=FALSE, warning =FALSE,error=FALSE}
+freq_mes <- data.table(table(dados$month_year))
+freq_mes$V1 <- as.yearmon(freq_mes$V1, format = "%m/%Y") 
+freq_mes$V3 <- as.Date(format(freq_mes$V1,"%Y-%m-01"))
+
+ggplot(data=freq_mes, aes(x = V3, y=N)) + 
+  geom_line(size=1.2, color="indianred2") + 
+  geom_point(size=3,color="indianred2") + 
+ xlab("Mês dos primeiros sintomas")  +
+    ylab("N de casos Covid-19") + scale_x_date(labels = date_format("%h %y"),
+               breaks = seq(from = min(freq_mes$V3), 
+                            to = max(freq_mes$V3), by = "month")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + theme_bw() + geom_vline(aes(xintercept = date("2021-05-01")),
+             linetype = 2,
+             colour = "#32A0FF") + geom_vline(aes(xintercept = date("2021-01-01")),
+             linetype = 2,
+             colour = "black") + geom_vline(aes(xintercept = date("2021-08-01")),
+             linetype = 2,
+             colour = "red") + geom_vline(aes(xintercept = date("2022-01-01")),
+             linetype = 2,
+             colour = "purple") + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + annotate(
+    "text",
+    x = date("2021-02-01"),
+    y = 2000,
+    label = "Gamma",size=3
+  ) + annotate(
+    "text",
+    x = date("2021-06-01"),
+    y = 1500,
+    label = "Vacinação",size=3,colour = "#32A0FF"
+  ) + annotate(
+    "text",
+    x = date("2021-09-01"),
+    y = 2300,
+    label = "Delta",size=3,colour = "red"
+  ) + annotate(
+    "text",
+    x = date("2021-12-01"),
+    y = 2300,
+    label = "Omicron",size=3,colour = "purple"
+  )
+
+#Frequency Cases
+d10 <- table(dados$month_year)
+d10 <- as.data.frame(d10)
+d10 <- data.frame(str_split(d10$Var1,"/",simplify=TRUE),d10)
+d10 <- d10 %>% arrange(X2,X1)
+d10$Var1 <- NULL
+d10 <- rename(d10,"Mês"="X1","Ano"="X2","Numero de casos"="Freq") 
+d10
+```
+
+# Casos de óbitos COVID-19 por mês 
+
+```{r , echo=FALSE, message=FALSE, warning =FALSE,error=FALSE}  
+d <- table(dados$month_year,dados$evolucao)
+freq_mes_ob <- as.data.frame(d)
+freq_mes_ob <- freq_mes_ob[freq_mes_ob$Var2 == "Obito",]
+freq_mes_ob$Var1 <- as.yearmon(freq_mes_ob$Var1, format = "%m/%Y") 
+freq_mes_ob$V3 <- as.Date(format(freq_mes_ob$Var1,"%Y-%m-01"))
+
+ggplot(data=freq_mes_ob, aes(x = V3, y=Freq)) + 
+  geom_line(size=1.2, color="indianred2") + 
+  geom_point(size=3,color="indianred2") + 
+ xlab("Mês dos primeiros sintomas")  +
+    ylab("Numero de óbitos") + scale_x_date(labels = date_format("%h %y"),
+               breaks = seq(from = min(freq_mes_ob$V3), 
+                            to = max(freq_mes_ob$V3), by = "month")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + theme_bw() + geom_vline(aes(xintercept = date("2021-05-01")),
+             linetype = 2,
+             colour = "#32A0FF") + geom_vline(aes(xintercept = date("2021-01-01")),
+             linetype = 2,
+             colour = "black") + geom_vline(aes(xintercept = date("2021-08-01")),
+             linetype = 2,
+             colour = "red") + geom_vline(aes(xintercept = date("2022-01-01")),
+             linetype = 2,
+             colour = "purple") + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + annotate(
+    "text",
+    x = date("2021-02-01"),
+    y = 340,
+    label = "Gamma",size=3
+  ) + annotate(
+    "text",
+    x = date("2021-06-01"),
+    y = 370,
+    label = "Vacinação",size=3,colour = "#32A0FF"
+  ) + annotate(
+    "text",
+    x = date("2021-09-01"),
+    y = 200,
+    label = "Delta",size=3,colour = "red"
+  ) + annotate(
+    "text",
+    x = date("2021-12-01"),
+    y = 300,
+    label = "Omicron",size=3,colour = "purple"
+  )
+
+```
+
+# Letalidade COVID-19
+
+```{r , echo=FALSE, message=FALSE, warning =FALSE,error=FALSE}  
+d <- prop.table(table(dados$month_year,dados$evolucao),1)
+freq_mes_let <- as.data.frame(d)
+freq_mes_let <- freq_mes_let[freq_mes_let$Var2 == "Obito",]
+freq_mes_let$Freq <- round((freq_mes_let$Freq)*100, 2)
+freq_mes_let$Var1 <- as.yearmon(freq_mes_let$Var1, format = "%m/%Y") 
+freq_mes_let$V3 <- as.Date(format(freq_mes_let$Var1,"%Y-%m-01"))
+
+ggplot(data=freq_mes_let, aes(x = V3, y=Freq)) + 
+  geom_line(size=1.2, color="indianred2") + 
+  geom_point(size=3,color="indianred2") + 
+ xlab("Mês dos primeiros sintomas")  +
+    ylab("Letalidade [%]") + scale_x_date(labels = date_format("%h %y"),
+               breaks = seq(from = min(freq_mes_let$V3), 
+                            to = max(freq_mes_let$V3), by = "month")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + theme_bw() + geom_vline(aes(xintercept = date("2021-05-01")),
+             linetype = 2,
+             colour = "#32A0FF") + geom_vline(aes(xintercept = date("2021-01-01")),
+             linetype = 2,
+             colour = "black") + geom_vline(aes(xintercept = date("2021-08-01")),
+             linetype = 2,
+             colour = "red") + geom_vline(aes(xintercept = date("2022-01-01")),
+             linetype = 2,
+             colour = "purple") + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + annotate(
+    "text",
+    x = date("2021-02-01"),
+    y = 20,
+    label = "Gamma",size=3
+  ) + annotate(
+    "text",
+    x = date("2021-06-01"),
+    y = 13,
+    label = "Vacinação",size=3,colour = "#32A0FF"
+  ) + annotate(
+    "text",
+    x = date("2021-09-01"),
+    y = 9,
+    label = "Delta",size=3,colour = "red"
+  ) + annotate(
+    "text",
+    x = date("2021-12-01"),
+    y = 9,
+    label = "Omicron",size=3,colour = "purple"
+  )
+
+d9 <- data.frame(tabyl(dados,month_year,evolucao,show_na = FALSE) %>% adorn_totals("col"))
+d9$Cura <-NULL
+d9 <- data.frame(str_split(d9$month_year,"/",simplify=TRUE),d9,freq_mes_let$Freq)
+d9 <- d9 %>% arrange(X2,X1)
+d9$month_year <- NULL
+d9 <- rename(d9,"Mês"="X1","Ano"="X2","obitos"="Obito","%"="freq_mes_let.Freq","numero casos finalizados" = "Total") 
+d9
+```
+
+# Casos de Internações na UTI COVID-19 por mês 
+
+```{r , echo=FALSE, message=FALSE, warning =FALSE,error=FALSE}  
+d <- table(dados$month_year,dados$uti)
+freq_mes_int <- as.data.frame(d)
+freq_mes_int <- freq_mes_int[freq_mes_int$Var2 == "sim",]
+freq_mes_int$Var1 <- as.yearmon(freq_mes_int$Var1, format = "%m/%Y") 
+freq_mes_int$V3 <- as.Date(format(freq_mes_int$Var1,"%Y-%m-01"))
+
+ggplot(data=freq_mes_int, aes(x = V3, y=Freq)) + 
+  geom_line(size=1.2, color="indianred2") + 
+  geom_point(size=3,color="indianred2") + 
+ xlab("Mês dos primeiros sintomas")  +
+    ylab("Numero de casos uti") + scale_x_date(labels = date_format("%h %y"),
+               breaks = seq(from = min(freq_mes_int$V3), 
+                            to = max(freq_mes_int$V3), by = "month")) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + theme_bw() + geom_vline(aes(xintercept = date("2021-05-01")),
+             linetype = 2,
+             colour = "#32A0FF") + geom_vline(aes(xintercept = date("2021-01-01")),
+             linetype = 2,
+             colour = "black") + geom_vline(aes(xintercept = date("2021-08-01")),
+             linetype = 2,
+             colour = "red") + geom_vline(aes(xintercept = date("2022-01-01")),
+             linetype = 2,
+             colour = "purple") + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + annotate(
+    "text",
+    x = date("2021-02-01"),
+    y = 700,
+    label = "Gamma",size=3
+  ) + annotate(
+    "text",
+    x = date("2021-06-01"),
+    y = 400,
+    label = "Vacinação",size=3,colour = "#32A0FF"
+  ) + annotate(
+    "text",
+    x = date("2021-09-01"),
+    y = 600,
+    label = "Delta",size=3,colour = "red"
+  ) + annotate(
+    "text",
+    x = date("2021-12-01"),
+    y = 300,
+    label = "Omicron",size=3,colour = "purple"
+  )
+
+d13 <- data.frame(tabyl(dados,month_year,uti,show_na = FALSE) %>% adorn_totals("col"))
+d13$não <-NULL
+d13 <- data.frame(str_split(d13$month_year,"/",simplify=TRUE),d13)
+d13 <- d13 %>% arrange(X2,X1)
+d13$month_year <- NULL
+d13 <- rename(d13,"Mês"="X1","Ano"="X2","n uti"="sim","casos finalizados" = "Total") 
+d13
+
+```
+
+# Análises primeira e segunda doses COVID-19
+
+Para a variável de primeira dose da vacina, temos `r nrow(dados[!is.na(dados$dt_1dose),])` observações, para a variável de segunda dose temos `r nrow(dados[!is.na(dados$dt_2dose),])`, temos `r nrow(dados[!is.na(dados$dt_1dose) & !is.na(dados$dt_2dose),])` onde temos a informação da primeira e da segunda dose e temos `r nrow(dados[dados$vacina_cov == "sim" & is.na(dados$dt_1dose) & is.na(dados$dt_2dose),])` observações onde a variável vacina é preenchida com sim mas não temos informações sobre a primeira ou segunda dose.
+
+Assim criamos a variável doses
+
+```{r , echo=FALSE, message=FALSE, warning =FALSE,error=FALSE}
+dados <- dados %>% 
+  mutate(dt_1dose = as.Date(DOSE_1_COV, format = "%d/%m/%Y")) %>% 
+  mutate(dt_2dose = as.Date(DOSE_2_COV, format = "%d/%m/%Y")) %>% 
+  mutate(doses = case_when(
+                            vacina_cov == "sim" & is.na(dt_1dose) 
+                            & is.na(dt_2dose) ~ "pelo menos uma dose",
+                            !is.na(dt_2dose) ~ "duas doses",
+                            !is.na(dt_1dose) & is.na(dt_2dose) ~ "pelo menos uma dose",
+                            TRUE ~ "não informado"))
+
+freq(dados$doses)
+```
