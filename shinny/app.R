@@ -98,28 +98,6 @@ sticky_style <-
 # Dia de hoje ----
 hoje <- Sys.Date()
 
-# Que vamos usar para medidas resumo ----
-media <- function(x)
-  mean(x, na.rm = TRUE)
-mediana <- function(x)
-  median(x, na.rm = TRUE)
-DP <- function(x)
-  sd(x, na.rm = TRUE)
-minimo <- function(x)
-  base::min(x, na.rm = TRUE)
-maximo <- function(x)
-  base::max(x, na.rm = TRUE)
-q25 <- function(x)
-  stats::quantile(x, p = 0.25, na.rm = TRUE)
-q75 <- function(x)
-  stats::quantile(x, p = 0.75, na.rm = TRUE)
-IQR <- function(x)
-  round(q75(x) - q25(x), 2)
-n <- function(x)
-  round(sum(!is.na(x)), digits = 0)
-faltantes <- function(x)
-  round(sum(is.na(x)), digits = 0)
-
 
 humanTime <- function() {
   format(Sys.time(), "%Y%m%d-%H%M%OS")
