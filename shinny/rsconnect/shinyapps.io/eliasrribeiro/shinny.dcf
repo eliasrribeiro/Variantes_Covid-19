@@ -1,0 +1,13 @@
+name: shinny
+title: shinny
+username:
+account: eliasrribeiro
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 6413621
+bundleId: 5968972
+url: https://eliasrribeiro.shinyapps.io/shinny/
+when: 1654112097.29256
+lastSyncTime: 1654112097.29257
+asMultiple: FALSE
+asStatic: FALSE

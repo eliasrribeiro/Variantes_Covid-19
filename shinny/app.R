@@ -227,9 +227,8 @@ ui <-
         # menuItem("Início", tabName = "inicio"),
         # menuItem("Documentação", tabName = "doc"),
         # menuItem("Informações Gerais", tabName = "info"),
-        menuItem("Análise", tabName = "tab_cruzada")
-        # menuItem("Variáveis tempo", tabName = "tempo"),
-        # menuItem("Tempo de atraso de notificação", tabName = "notificacao"),
+        menuItem("Análise Geral", tabName = "tab_cruzada"),
+        menuItem("Análise por Variante", tabName = "anal_var")
         # menuItem("Casos por UF e município", tabName = "muni_casos"),
         # menuItem("Médias móveis", tabName = "graf"),
         # menuItem("Mapas", tabName = "mps_casos")
@@ -417,14 +416,14 @@ ui <-
                     "Características gestantes e/ou puérperas"
                   )),
                   sliderInput(
-                    inputId = "idade2",
+                    inputId = "idade1",
                     label = "Intervalo de idade:",
                     min = min(dados5$idade_anos),
                     max = max(dados5$idade_anos),
                     value = c(min(dados5$idade_anos), max(dados5$idade_anos))
                   ),
                   checkboxGroupInput(
-                    inputId = "GestantePuerpera2",
+                    inputId = "GestantePuerpera1",
                     label = "Idade gestacional/puérpera:",
                     choices = c(
                       "1° trimestre" = "1tri",
@@ -438,7 +437,7 @@ ui <-
                   hr(),
                   h4(strong("Diagnóstico")),
                   checkboxGroupInput(
-                    inputId = "classiCovid2",
+                    inputId = "classiCovid1",
                     label = "Tipo de diagnóstico de COVID:",
                     choices = c(
                       "PCR" = "pcr",
@@ -480,8 +479,11 @@ ui <-
                              highcharter::highchartOutput("plot11")),
                     tabPanel("Teste de Fisher",
                              verbatimTextOutput("print1")),
-                    tabPanel("Grafico Geral",
-                             highcharter::highchartOutput("plot12"))
+                    tabPanel("Grafico por variante e vacina",
+                             highcharter::highchartOutput("plot12"),
+                             p(
+                               "O gráfico acima indica a porcentagem de causas da variável selecionada (ex: 'óbito' para evolução, 'invasivo' para Intubação, 'sim' para febre) em cada variante no grupo vacinado e em cada variante no grupo não vacinado"
+                             ))
                   )),
                   verbatimTextOutput("table1"),
                   h3(strong("Observação")),
@@ -494,7 +496,158 @@ ui <-
                 selecione o botão 'Excluir casos faltantes?'."
                   )
                 )
-              ))
+              )),
+      ### Item Análise por variante ----
+      tabItem(tabName = "anal_var",
+              fluidRow(
+                box(
+                  collapsible = TRUE,
+                  width = 4,
+                  title = "Selecione",
+                  status = "primary",
+                  solidHeader = FALSE,
+                  h4(strong("Variáveis de interesse")),
+                  selectInput(
+                    inputId = "caracteristicas2",
+                    label = "Característica na linha:",
+                    choices = c(
+                      "Ano do caso" = "ano",
+                      "Classificação do caso" = "classi_fin1",
+                      "Diagnóstico COVID-19" = "classi_covid",
+                      "Momento gestacional" = "classi_gesta_puerp",
+                      "Região do Brasil"  = "region",
+                      "UF do Brasil"  = "SG_UF",
+                      "Raça" = "raca",
+                      "Escolaridade" = "escol",
+                      "Faixa etária" = "faixa_et",
+                      "Histórico de viagem" = "hist_viagem",
+                      "Mudança município" = "mudou_muni",
+                      "Zona da residência" = "zona",
+                      "SG para SRAG" = "sg_para_srag",
+                      "Infecção no hospital" = "inf_inter",
+                      "Contato com suíno" = "cont_ave_suino",
+                      "Vacina contra gripe" = "vacina",
+                      "Antiviral" = "antiviral",
+                      "Internação" = "hospital",
+                      "Febre" = "febre",
+                      "Tosse" = "tosse",
+                      "Garganta" = "garganta",
+                      "Dispinéia" = "dispneia",
+                      "Desconforto respiratório" = "desc_resp",
+                      "Saturação" = "saturacao",
+                      "Diarréia" = "diarreia",
+                      "Vômito" = "vomito",
+                      "Dor abdominal" = "dor_abd",
+                      "Fadiga" = "fadiga",
+                      "Perda olfativa" = "perd_olft",
+                      "Perda paladar" = "perd_pala",
+                      "Cardiovascular" = "cardiopati",
+                      "Hematológica" = "hematologi",
+                      "Hepática" = "hepatica",
+                      "Asma" = "asma",
+                      "Diabetes" = "diabetes",
+                      "Neuropatia" = "neuro",
+                      "Pneumopatia" = "pneumopati",
+                      "Imunodepressão" = "imunodepre",
+                      "Renal" = "renal",
+                      "Obesidade" = "obesidade",
+                      "UTI" = "uti",
+                      "Suporte ventilatório" = "suport_ven",
+                      "Intubação S/N" = "intubacao_SN",
+                      "Evolução" = "evolucao"
+                    ),
+                    selected = "evolucao",
+                    width = "220px"
+                  ),
+                  strong("Selecionar só casos válidos?"),
+                  checkboxInput("na2", "Excluir casos faltantes?",
+                                value = TRUE),
+                  hr(),
+                   h4(strong(
+                     "Características gestantes e/ou puérperas"
+                   )),
+                  sliderInput(
+                    inputId = "idade2",
+                    label = "Intervalo de idade:",
+                    min = min(dados5$idade_anos),
+                    max = max(dados5$idade_anos),
+                    value = c(min(dados5$idade_anos), max(dados5$idade_anos))
+                  ),
+                  checkboxGroupInput(
+                    inputId = "GestantePuerpera2",
+                    label = "Idade gestacional/puérpera:",
+                    choices = c(
+                      "1° trimestre" = "1tri",
+                      "2° trimestre" = "2tri",
+                      "3° trimestre" = "3tri",
+                      "Idade gestacional ignorada" = "IG_ig",
+                      "Puérpera" = "puerp"
+                    ),
+                    selected = c("1tri", "2tri", "3tri", "IG_ig", "puerp")
+                  ),
+                  hr(),
+                  h4(strong("Diagnóstico")),
+                  checkboxGroupInput(
+                    inputId = "classiCovid2",
+                    label = "Tipo de diagnóstico de COVID:",
+                    choices = c(
+                      "PCR" = "pcr",
+                      "Antigênio" = "antigenio",
+                      "Sorologia" = "sorologia",
+                      "Outro" = "outro",
+                      "Não confirmado ou não COVID-19" = "não"
+                    ),
+                    selected = c("pcr", "antigenio", "sorologia", "outro", "não")
+                  ),
+                  hr(),
+                  h4(strong("Vacina")),
+                  checkboxGroupInput(
+                    inputId = "dosescov2",
+                    label = "Tomou quantas doses?:",
+                    choices = c(
+                      "Pelo menos uma dose" = "pelo menos uma dose",
+                      "Duas doses" = "duas doses",
+                      "Não informado" = "não informado"
+                    ),
+                    selected = c("pelo menos uma dose","duas doses","não informado")
+                  )
+                ),
+                box(
+                  width = 8,
+                  status = "primary",
+                  div(tabsetPanel(
+                    tabPanel("Original",
+                             highcharter::highchartOutput("plot21"),
+                             verbatimTextOutput("table2")),
+                    tabPanel("Gama",
+                             highcharter::highchartOutput("plot5"),
+                             verbatimTextOutput("table5"),
+                             h3(strong("Teste de Fisher")),
+                             verbatimTextOutput("print5")),
+                    tabPanel("Delta",
+                             highcharter::highchartOutput("plot6"),
+                             verbatimTextOutput("table6"),
+                             h3(strong("Teste de Fisher")),
+                             verbatimTextOutput("print6")),
+                    tabPanel("Omicron",
+                             highcharter::highchartOutput("plot7"),
+                             verbatimTextOutput("table7"),
+                             h3(strong("Teste de Fisher")),
+                             verbatimTextOutput("print7")),
+                  )),
+                  h3(strong("Observação")),
+                  p(
+                    "<NA> na tabela acima indica os casos faltantes ou ignorados (não resposta) das variáveis em questão.
+                  No gráfico, essa informação aparece na categoria com número (por exemplo, número 2)."
+                  ),
+                  p(
+                    "Caso queira só analisar os casos válidos (sem considerar os casos faltantes), no canto superior esquerdo em 'Selecionar só casos válidos?',
+                selecione o botão 'Excluir casos faltantes?'."
+                  )
+                )
+              )
+              
+              )
     )))
     
 # Server ----
@@ -504,11 +657,11 @@ server <- function(input, output, session) {
   
   selectData2 <- reactive({
     dados5 %>%
-      dplyr::filter(idade_anos >= input$idade2[1]) %>%
-      dplyr::filter(idade_anos <= input$idade2[2]) %>%
-      dplyr::filter(classi_gesta_puerp %in% input$GestantePuerpera2) %>%
+      dplyr::filter(idade_anos >= input$idade1[1]) %>%
+      dplyr::filter(idade_anos <= input$idade1[2]) %>%
+      dplyr::filter(classi_gesta_puerp %in% input$GestantePuerpera1) %>%
       # dplyr::filter(CLASSI_FIN %in% input$confCovid2) %>%
-      dplyr::filter(classi_covid %in% input$classiCovid2) %>%
+      dplyr::filter(classi_covid %in% input$classiCovid1) %>%
       dplyr::filter(vacina_cov_sel %in% input$vacinacov) %>%
       dplyr::filter(variante %in% input$classivariante) %>%
       dplyr::filter(doses %in% input$dosescov) %>%
@@ -551,28 +704,53 @@ server <- function(input, output, session) {
   
   ### Gráfico geral por variável (vacina covid e variantes) ----
   
+  
   tab1 <- reactive({
     if(input$caracteristicas1 == "evolucao"){
-      selectData2() %>% 
-        filter(evolucao=="obito") %>%
-        with(.,data.frame(prop.table(table(vacina_cov,variante))))
+      d1 <- selectData2() %>%  filter(vacina_cov == "sim")
+      d2 <- selectData2() %>%  filter(vacina_cov == "não")
+      dados1 <- data.frame(prop.table(table(d1$variante,d1[[input$caracteristicas1]]),1)) 
+      dados1$vacina <- "sim"
+      dados2 <- data.frame(prop.table(table(d2$variante,d2[[input$caracteristicas1]]),1)) 
+      dados2$vacina <- "não"
+      dados1<- dados1 %>% filter(Var2 == "obito")
+      dados2<- dados2 %>% filter(Var2 == "obito")
+      dados <- rbind(dados1,dados2)
+      dados$Freq <- round(dados$Freq*100,2)
+      return(dados)
     }
     else if(input$caracteristicas1 == "suport_ven" | input$caracteristicas1 == "intubacao_SN"){
-      selectData2() %>% 
-        filter(suport_ven=="invasivo") %>%
-        with(.,data.frame(prop.table(table(vacina_cov,variante))))
+      d1 <- selectData2() %>%  filter(vacina_cov == "sim")
+      d2 <- selectData2() %>%  filter(vacina_cov == "não")
+      dados1 <- data.frame(prop.table(table(d1$variante,d1$suport_ven),1)) 
+      dados1$vacina <- "sim"
+      dados2 <- data.frame(prop.table(table(d2$variante,d2$suport_ven),1)) 
+      dados2$vacina <- "não"
+      dados1<- dados1 %>% filter(Var2 == "invasivo")
+      dados2<- dados2 %>% filter(Var2 == "invasivo")
+      dados <- rbind(dados1,dados2)
+      dados$Freq <- round(dados$Freq*100,2)
+      return(dados)
     }
     else {
-      selectData2() %>% 
-        filter(get(input$caracteristicas1)=="sim") %>%
-        with(.,data.frame(prop.table(table(vacina_cov,variante))))
+      d1 <- selectData2() %>%  filter(vacina_cov == "sim")
+      d2 <- selectData2() %>%  filter(vacina_cov == "não")
+      dados1 <- data.frame(prop.table(table(d1$variante,d1[[input$caracteristicas1]]),1)) 
+      dados1$vacina <- "sim"
+      dados2 <- data.frame(prop.table(table(d2$variante,d2[[input$caracteristicas1]]),1)) 
+      dados2$vacina <- "não"
+      dados1<- dados1 %>% filter(Var2 == "sim")
+      dados2<- dados2 %>% filter(Var2 == "sim")
+      dados <- rbind(dados1,dados2)
+      dados$Freq <- round(dados$Freq*100,2)
+      return(dados)
     }
     })
     
   output$plot12 <- highcharter::renderHighchart({
       hchart(tab1(), type = "line",
-           hcaes(x = variante,
-                 y = Freq, group = vacina_cov,colour=vacina_cov)) %>%
+           hcaes(x = Var1,
+                 y = Freq, group = vacina,colour=vacina)) %>%
       hc_xAxis(title = list(text = "Variantes")) %>%
       hc_yAxis(title = list(text = "%")) %>%
       hc_add_theme(hc_theme_elementary())
@@ -600,6 +778,136 @@ server <- function(input, output, session) {
          fisher.test(variante,get(input$caracteristicas1),simulate.p.value = TRUE))
   })
   
+  ## base de dados com filtragem por inputs para analise por variante ----
+  
+  selectData3 <- reactive({
+    dados5 %>%
+      dplyr::filter(idade_anos >= input$idade2[1]) %>%
+      dplyr::filter(idade_anos <= input$idade2[2]) %>%
+      dplyr::filter(classi_gesta_puerp %in% input$GestantePuerpera2) %>%
+      dplyr::filter(classi_covid %in% input$classiCovid2) %>%
+      dplyr::filter(doses %in% input$dosescov2) %>%
+      dplyr::filter(!is.na(vacina_cov)) %>% 
+      {
+        if (input$na2 == TRUE)
+          dplyr::filter(., !is.na(get(input$caracteristicas2)))
+        else
+          dplyr::filter(., (!is.na(get(
+            input$caracteristicas2
+          )) | is.na(get(
+            input$caracteristicas2
+          ))))
+      }
+  })
+  
+  ### Gráfico e tabela cruzada Original ----
+  
+  selectData4 <- reactive({
+    selectData3() %>% 
+      filter(variante=="original")
+  })
+  
+  dados_hc_aux2 <- reactive({
+    selectData4() %>%
+      count(var = .[["vacina_cov"]]) %>%
+      mutate(ntot = n) %>%
+      select(-n)
+  })
+
+  dados_hc2 <- reactive({
+    selectData4() %>%
+      count(var = .[["vacina_cov"]],
+            var2 = .[[input$caracteristicas2]]) %>%
+      full_join(dados_hc_aux2(), by = "var") %>%
+      mutate(porc = round((n / ntot) * 100, 2))
+  })
+
+  output$plot21 <- highcharter::renderHighchart({
+    hchart(dados_hc2(), type = "column",
+           hcaes(x = var,
+                 y = porc, group = var2)) %>%
+      hc_xAxis(title = list(text = "Vacina de Covid-19")) %>%
+      hc_yAxis(title = list(text = "%")) %>%
+      hc_add_theme(hc_theme_elementary())
+  })
+
+  
+  output$table2 <- renderPrint({
+    st_options(headings = FALSE, display.labels = FALSE)
+    with(
+      selectData4(),
+      summarytools::ctable(
+        get(input$caracteristicas2),
+        vacina_cov,
+        prop = "c",
+        headings = st_options("headings"),
+        display.labels = st_options("display.labels"),
+        useNA = "ifany",
+        dnn = c(input$caracteristicas2, "Vacina de Covid-19"),
+        chisq = TRUE
+      )
+    )
+  })
+  
+  output$print2 <- renderPrint({
+    with(selectData4(),
+         fisher.test(vacina_cov,get(input$caracteristicas2),simulate.p.value = TRUE))
+  })
+  
+  ### Gráfico e tabela cruzada gama ----
+  
+  selectData5 <- reactive({
+    selectData3() %>% 
+      filter(variante=="gama")
+  })
+  
+  dados_hc_aux5 <- reactive({
+    selectData5() %>%
+      count(var = .[["vacina_cov"]]) %>%
+      mutate(ntot = n) %>%
+      select(-n)
+  })
+  
+  dados_hc5 <- reactive({
+    selectData5() %>%
+      count(var = .[["vacina_cov"]],
+            var2 = .[[input$caracteristicas2]]) %>%
+      full_join(dados_hc_aux5(), by = "var") %>%
+      mutate(porc = round((n / ntot) * 100, 2))
+  })
+  
+  output$plot5 <- highcharter::renderHighchart({
+    hchart(dados_hc5(), type = "column",
+           hcaes(x = var,
+                 y = porc, group = var2)) %>%
+      hc_xAxis(title = list(text = "Vacina de Covid-19")) %>%
+      hc_yAxis(title = list(text = "%")) %>%
+      hc_add_theme(hc_theme_elementary())
+  })
+  
+  
+  output$table5 <- renderPrint({
+    st_options(headings = FALSE, display.labels = FALSE)
+    with(
+      selectData5(),
+      summarytools::ctable(
+        get(input$caracteristicas2),
+        vacina_cov,
+        prop = "c",
+        headings = st_options("headings"),
+        display.labels = st_options("display.labels"),
+        useNA = "ifany",
+        dnn = c(input$caracteristicas2, "Vacina de Covid-19"),
+        chisq = TRUE
+      )
+    )
+  })
+  
+  output$print5 <- renderPrint({
+    with(selectData5(),
+         fisher.test(vacina_cov,get(input$caracteristicas2),simulate.p.value = TRUE))
+  })
+  
   # Gather all the form inputs (and add timestamp)
   formData <- reactive({
     data <- sapply(fieldsAll, function(x)
@@ -609,6 +917,122 @@ server <- function(input, output, session) {
     data
   })
   
+  ### Gráfico e tabela cruzada delta ----
+  
+  selectData6 <- reactive({
+    selectData3() %>% 
+      filter(variante=="delta")
+  })
+  
+  dados_hc_aux6 <- reactive({
+    selectData6() %>%
+      count(var = .[["vacina_cov"]]) %>%
+      mutate(ntot = n) %>%
+      select(-n)
+  })
+  
+  dados_hc6 <- reactive({
+    selectData6() %>%
+      count(var = .[["vacina_cov"]],
+            var2 = .[[input$caracteristicas2]]) %>%
+      full_join(dados_hc_aux6(), by = "var") %>%
+      mutate(porc = round((n / ntot) * 100, 2))
+  })
+  
+  output$plot6 <- highcharter::renderHighchart({
+    hchart(dados_hc6(), type = "column",
+           hcaes(x = var,
+                 y = porc, group = var2)) %>%
+      hc_xAxis(title = list(text = "Vacina de Covid-19")) %>%
+      hc_yAxis(title = list(text = "%")) %>%
+      hc_add_theme(hc_theme_elementary())
+  })
+  
+  
+  output$table6 <- renderPrint({
+    st_options(headings = FALSE, display.labels = FALSE)
+    with(
+      selectData6(),
+      summarytools::ctable(
+        get(input$caracteristicas2),
+        vacina_cov,
+        prop = "c",
+        headings = st_options("headings"),
+        display.labels = st_options("display.labels"),
+        useNA = "ifany",
+        dnn = c(input$caracteristicas2, "Vacina de Covid-19"),
+        chisq = TRUE
+      )
+    )
+  })
+  
+  output$print6 <- renderPrint({
+    with(selectData6(),
+         fisher.test(vacina_cov,get(input$caracteristicas2),simulate.p.value = TRUE))
+  })
+  
+  ### Gráfico e tabela cruzada omicron ----
+  
+  selectData7 <- reactive({
+    selectData3() %>% 
+      filter(variante=="omicron")
+  })
+  
+  dados_hc_aux7 <- reactive({
+    selectData7() %>%
+      count(var = .[["vacina_cov"]]) %>%
+      mutate(ntot = n) %>%
+      select(-n)
+  })
+  
+  dados_hc7 <- reactive({
+    selectData7() %>%
+      count(var = .[["vacina_cov"]],
+            var2 = .[[input$caracteristicas2]]) %>%
+      full_join(dados_hc_aux7(), by = "var") %>%
+      mutate(porc = round((n / ntot) * 100, 2))
+  })
+  
+  output$plot7 <- highcharter::renderHighchart({
+    hchart(dados_hc7(), type = "column",
+           hcaes(x = var,
+                 y = porc, group = var2)) %>%
+      hc_xAxis(title = list(text = "Vacina de Covid-19")) %>%
+      hc_yAxis(title = list(text = "%")) %>%
+      hc_add_theme(hc_theme_elementary())
+  })
+  
+  
+  output$table7 <- renderPrint({
+    st_options(headings = FALSE, display.labels = FALSE)
+    with(
+      selectData7(),
+      summarytools::ctable(
+        get(input$caracteristicas2),
+        vacina_cov,
+        prop = "c",
+        headings = st_options("headings"),
+        display.labels = st_options("display.labels"),
+        useNA = "ifany",
+        dnn = c(input$caracteristicas2, "Vacina de Covid-19"),
+        chisq = TRUE
+      )
+    )
+  })
+  
+  output$print7 <- renderPrint({
+    with(selectData7(),
+         fisher.test(vacina_cov,get(input$caracteristicas2),simulate.p.value = TRUE))
+  })
+  
+  # Gather all the form inputs (and add timestamp)
+  formData <- reactive({
+    data <- sapply(fieldsAll, function(x)
+      input[[x]])
+    data <- c(data, timestamp = humanTime())
+    data <- t(data)
+    data
+  })
   # When the Submit button is clicked, submit the response
   observeEvent(input$submit, {
     # User-experience stuff
