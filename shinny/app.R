@@ -20,6 +20,7 @@ library(plotly)
 library(lubridate)
 library(googlesheets4)
 library(shinyjs)
+library(logbin)
 
 # Carregando a base de dados ----
 
@@ -40,10 +41,13 @@ dados5 <- dados5 %>%
 
 
 dados5 <- dados5 %>% 
-    mutate(vacina_cov = ifelse(variante == "original","não",vacina_cov))
+    mutate(vacina_cov = ifelse(variante == "original","não",vacina_cov)) 
+
+
 
 dados5$variante <- factor(dados5$variante,
                           levels = c("original", "gama", "delta","omicron"))
+
   
 dados5 <- dados5 %>% 
   filter(CLASSI_FIN == "5")
@@ -52,7 +56,7 @@ dados5 <- dados5 %>%
   mutate(dt_1dose = as.Date(DOSE_1_COV, format = "%d/%m/%Y")) %>% 
   mutate(dt_2dose = as.Date(DOSE_2_COV, format = "%d/%m/%Y")) %>% 
   mutate(doses = case_when(
-    vacina == "sim" & is.na(dt_1dose) 
+    vacina_cov == "sim" & is.na(dt_1dose) 
     & is.na(dt_2dose) ~ "pelo menos uma dose",
     !is.na(dt_2dose) ~ "duas doses",
     !is.na(dt_1dose) & is.na(dt_2dose) ~ "pelo menos uma dose",
@@ -85,6 +89,21 @@ dados5$CLASSI_FIN <- as.factor(dados5$CLASSI_FIN)
 dados5$DT_SIN_PRI <- dmy(dados5$DT_SIN_PRI)
 dados5$DT_EVOLUCA <- dmy(dados5$DT_EVOLUCA)
 
+dados5 <- dados5 %>% 
+  mutate(variante2 = as.numeric(case_when(
+    variante == "original" ~ "1",
+    variante == "gama" ~ "2",
+    variante == "delta" ~ "3",
+    variante == "omicron" ~ "4",
+    TRUE ~ NA_character_)))
+
+dados5 <- dados5 %>% 
+  mutate(vacina_cov2 = as.numeric(case_when(
+    vacina_cov == "sim"  ~ "1",
+    vacina_cov == "não"  ~ "0",
+    TRUE ~ NA_character_)))
+
+dados5$vacinacov_variante <- as.factor(dados5$vacina_cov2*dados5$variante2)
 
 sticky_style <-
   list(
@@ -482,8 +501,16 @@ ui <-
                     tabPanel("Grafico por variante e vacina",
                              highcharter::highchartOutput("plot12"),
                              p(
-                               "O gráfico acima indica a porcentagem de causas da variável selecionada (ex: 'óbito' para evolução, 'invasivo' para Intubação, 'sim' para febre) em cada variante no grupo vacinado e em cada variante no grupo não vacinado"
-                             ))
+                               "O gráfico acima indica a porcentagem de causas da variável selecionada (ex: 'óbito' para evolução, 'invasivo' para Intubação, 'sim' para febre) em cada variante no grupo vacinado e não vacinado"
+                             )),
+                    tabPanel("Modelo Logístico",
+                             verbatimTextOutput("print3")),
+                    tabPanel("Modelo Logístico com interação",
+                             verbatimTextOutput("print4")),
+                    tabPanel("Modelo Log-Binomial",
+                             verbatimTextOutput("print8")),
+                    tabPanel("Modelo Log-Binomial com interação",
+                             verbatimTextOutput("print9"))
                   )),
                   verbatimTextOutput("table1"),
                   h3(strong("Observação")),
@@ -778,6 +805,22 @@ server <- function(input, output, session) {
          fisher.test(variante,get(input$caracteristicas1),simulate.p.value = TRUE))
   })
   
+  output$print3 <- renderPrint({
+    glm(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ as.factor(vacina_cov)+variante, family = binomial)
+  })
+  
+  output$print4 <- renderPrint({
+    glm(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ as.factor(vacina_cov)*variante, family = binomial)
+  })
+  
+  output$print8 <- renderPrint({
+    logbin(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ as.factor(vacina_cov)+variante)
+  })
+  
+  output$print9 <- renderPrint({
+    logbin(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ as.factor(vacina_cov)+variante+vacinacov_variante)
+  })
+  
   ## base de dados com filtragem por inputs para analise por variante ----
   
   selectData3 <- reactive({
@@ -853,6 +896,7 @@ server <- function(input, output, session) {
     with(selectData4(),
          fisher.test(vacina_cov,get(input$caracteristicas2),simulate.p.value = TRUE))
   })
+  
   
   ### Gráfico e tabela cruzada gama ----
   

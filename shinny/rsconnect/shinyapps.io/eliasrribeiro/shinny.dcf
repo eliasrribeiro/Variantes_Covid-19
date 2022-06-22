@@ -5,9 +5,9 @@ account: eliasrribeiro
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 6413621
-bundleId: 5968972
+bundleId: 5972456
 url: https://eliasrribeiro.shinyapps.io/shinny/
-when: 1654112097.29256
-lastSyncTime: 1654112097.29257
+when: 1654195575.08017
+lastSyncTime: 1654195575.08018
 asMultiple: FALSE
 asStatic: FALSE
