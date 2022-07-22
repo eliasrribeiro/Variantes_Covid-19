@@ -48,7 +48,6 @@ dados5 <- dados5 %>%
 dados5$variante <- factor(dados5$variante,
                           levels = c("original", "gama", "delta","omicron"))
 
-  
 dados5 <- dados5 %>% 
   filter(CLASSI_FIN == "5")
 
@@ -83,6 +82,7 @@ dados5$raca_sel <-
 dados5$vacina_cov_sel <-
   ifelse(is.na(dados5$vacina_cov), "nao informado", dados5$vacina_cov)
 
+
 dados5$CLASSI_FIN <- as.factor(dados5$CLASSI_FIN)
 
 
@@ -104,6 +104,24 @@ dados5 <- dados5 %>%
     TRUE ~ NA_character_)))
 
 dados5$vacinacov_variante <- as.factor(dados5$vacina_cov2*dados5$variante2)
+
+
+dados5 <- dados5 %>% 
+  mutate(vacinacov_variante2 = as.factor(case_when(
+    variante == "original" ~ "original",
+    variante == "gama" & vacina_cov == "sim" ~ "gama_vacinasim",
+    variante == "gama" & vacina_cov == "não" ~ "gama_vacinanao",
+    variante == "delta" & vacina_cov == "sim" ~ "delta_vacinasim",
+    variante == "delta" & vacina_cov == "não" ~ "delta_vacinanao",
+    variante == "omicron" & vacina_cov == "sim" ~ "omicron_vacinasim",
+    variante == "omicron" & vacina_cov == "não" ~ "omicron_vacinanao",
+    TRUE ~ NA_character_)))
+
+dados5$vacinacov_variante2 <- factor(dados5$vacinacov_variante2,levels=c("original","gama_vacinanao","gama_vacinasim","delta_vacinanao","delta_vacinasim","omicron_vacinanao","omicron_vacinasim") )
+
+
+dados5$vacina_cov <- as.factor(dados5$vacina_cov)
+
 
 sticky_style <-
   list(
@@ -806,19 +824,19 @@ server <- function(input, output, session) {
   })
   
   output$print3 <- renderPrint({
-    glm(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ as.factor(vacina_cov)+variante, family = binomial)
+    glm(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ vacina_cov+variante, family = binomial)
   })
   
   output$print4 <- renderPrint({
-    glm(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ as.factor(vacina_cov)*variante, family = binomial)
+    glm(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ vacinacov_variante2, family = binomial)
   })
   
   output$print8 <- renderPrint({
-    logbin(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ as.factor(vacina_cov)+variante)
+    logbin(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ vacina_cov+variante)
   })
   
   output$print9 <- renderPrint({
-    logbin(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ as.factor(vacina_cov)+variante+vacinacov_variante)
+    logbin(data = selectData2(), as.factor(get(input$caracteristicas1)) ~ vacinacov_variante2)
   })
   
   ## base de dados com filtragem por inputs para analise por variante ----

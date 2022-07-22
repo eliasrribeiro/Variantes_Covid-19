@@ -1,0 +1,192 @@
+---
+title: "Prova 2 - Questão 4"
+subtitle: "Ornella Scardua Ferreira"
+author: "Análise de Dados Categorizados"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+```
+
+Neste exposto está a resolução da Questão 4, da Prova 2 de Análise de Dados Categorizados, disciplina ofertada no período 2022/1. A saber.
+
+### Questão 4
+
+```{r}
+dados <- array(
+  c(11, 42, 43, 169, 14, 20, 104, 132, 8, 2, 196, 59), 
+  dim = c(2, 2, 3), 
+  dimnames = list("escoteiro" = c("sim", "não"), "delinquente" = c("sim", "não"), "nível socioeconômico" = c("baixo", "médio", "alto"))
+)
+
+# escoteiro x deliquente
+
+dados_esc_del <- margin.table(dados, c(1, 2))
+
+# escoteiro x nivel
+
+dados_esc_nivel <- margin.table(dados, c(1, 3))
+
+# nivel x deliquente
+
+dados_nivel_del <- margin.table(dados, c(3, 2))
+
+```
+
+#### (a)
+
+Diz que as variáveis são mutuamente independentes se todas elas são independentes uma das outras, isto é, $S \perp E \perp D$. Então, para verificar a independência entre os pares de variáveis **nível socioeconômico** (S), **escoteiro** (E) e **deliquente** (D), basta aplicar o Teste Qui-quadrado de Pearson.
+
+* 1. independência entre as variáveis $E$ e $D$
+
+```{r}
+chisq.test(dados_esc_del)
+```
+
+* 2. independência entre as variáveis $E$ e $S$
+
+```{r}
+chisq.test(dados_esc_nivel)
+```
+
+* 3. independência entre as variáveis $S$ e $D$
+
+```{r}
+chisq.test(dados_nivel_del)
+```
+
+Portanto, a partir dos resultados obtidos em 1, 2 e 3, concluímos que as variáveis $S$, $E$ e $D$ são mutuamente independentes.
+
+#### (b)
+
+Diz-se que duas variáveis são condicionalmente independentes se duas variáveis, uma covariável e outra resposta, são independentes dada a terceira variável, isto é, $E \perp D|S$. Similarmente, é o mesmo que dizer que $OR_{ES|D}=1$. 
+
+Note que as razões de chances (OR) são diferentes para cada nível socioeconômico porém próximas de 1, levando-nos a pensar que essas diferenças podem não ser significativas do ponto de vista estatístico. 
+
+```{r}
+library(DescTools)
+
+# nivel baixo
+
+OddsRatio(dados[ , , 1])
+
+# nivel medio
+
+OddsRatio(dados[ , , 2])
+
+# nivel alto
+
+OddsRatio(dados[ , , 3])
+```
+
+Por esse motivo, torna-se adequada a aplicação do Teste de Mantel-Haenszel. E como suspeitamos a princípio, a hipótese nula que afirma que as ORs são iguais a 1 não foi rejeitada. De outro modo, isso quer dizer que as variáveis $E$ e $D$ são condicionalmente independentes.
+
+```{r}
+mantelhaen.test(dados, correct = FALSE)
+```
+
+#### (c)
+
+Diz-se que duas variáveis são homogeneamente independentes se as razões de chances (OR) condicionais não dependem do valor de uma terceira variável, isto é, $(ED, SD, ES)$. Para verificar esse tipo de independência, uma forma é usar o Teste de Breslow-Day, que testará a hipótese de que as razões de chance entre $E$ e $D$ são iguais em cada nível de $D$.
+
+```{r}
+BreslowDayTest(dados)
+```
+
+Como resultado da aplicação do referido teste, concluímos que as variáveis $E$, $S$ e $D$ são homogeneamente independentes, posto que a hipótese nula que afirma sobre a igualdade das ORs não foi rejeitada.
+
+#### (d)
+
+Para os dados deste problema, ajustamos um modelo de regressão logística.
+
+```{r}
+nivel <- c(rep("baixo", 265), rep("médio", 270), rep("alto", 265))
+
+escoteiro <- c(rep("sim", 11), rep("não", 42), rep("sim", 43), rep("não", 169), rep("sim", 14), rep("não", 20), rep("sim", 104), rep("não", 132), rep("sim", 8), rep("não", 2), rep("sim", 196), rep("não", 59))
+
+delinquente <- c(rep("sim", 53), rep("não", 212), rep("sim", 34), rep("não", 236), rep("sim", 10), rep("não", 255))
+
+dados <- data.frame(
+  "nível" = factor(nivel, levels = c("alto", "médio", "baixo")), 
+  "escoteiro" = as.factor(escoteiro), 
+  "delinquente" = as.factor(delinquente)
+)
+
+modelo <- glm(delinquente ~ ., data = dados, family = binomial("logit")); summary(modelo)
+```
+
+##### (d.1)
+
+De acordo com o resultado do ajuste, ambos os coeficientes estimados associados das variáveis **nível socioeconômico baixo** e **nível socioeconômico médio** deram positivos. Isso significa que se o jovem é de classe baixa ou média, a chance dele ser classificado como deliquente aumenta.
+
+Podemos concluir, ainda, que a chance de ser classificado como deliquente entre jovens de nível socioeconômico baixo é cerca de 6,3 vezes mais a chance dos jovens que têm nível socioeconômico alto, dado se ele é escoteiro ou não. Vejamos as razões de chances calculadas abaixo.
+
+```{r}
+# odds nivel baixo
+
+exp(1.83965)
+
+# odds nivel medio
+
+exp(1.29371)
+```
+
+##### (d.2)
+
+A probabilidade de um jovem escoteiro ser classificado como delinquente dado que ele é de **classe baixa** é:
+
+```{r}
+prob_baixo = exp(-3.22139 + 1.293715 * 0 + 1.83965 * 1 - 0.02252 * 1) / (1 + exp(-3.22139 + 1.293715 * 0 + 1.83965 * 1 - 0.02252 * 1)); prob_baixo
+```
+
+A probabilidade de um jovem escoteiro ser classificado como delinquente dado que ele é de **classe média** é:
+
+```{r}
+prob_media = exp(-3.22139 + 1.293715 * 1 + 1.83965 * 0 - 0.02252 * 1) / (1 + exp(-3.22139 + 1.293715 * 1 + 1.83965 * 0 - 0.02252 * 1)); prob_media
+```
+
+A probabilidade de um jovem escoteiro ser classificado como delinquente dado que ele é de **classe alta** é:
+
+```{r}
+prob_alta = exp(-3.22139 + 1.293715 * 0 + 1.83965 * 0 - 0.02252 * 1) / (1 + exp(-3.22139 + 1.293715 * 0 + 1.83965 * 0-0.02252 * 1)); prob_alta
+```
+
+Podemos perceber que à medida que o nível socioeconômico do jovem aumenta, menor é a sua probabilidade de ser classificado como deliquente.
+
+Por outro lado, se o jovem é escoteiro ou não, isso não parece influenciar na sua classificação como deliquente ou não, como mostra a razão de chance calculada a seguir.
+
+```{r}
+exp(-0.02252)
+```
+
+##### (d.3)
+
+Conforme as probabilidades calculadas no item anterior, a probabilidade de um jovem escoteiro que tem **nível socioeconômico médio** ser classificado como deliquente é maior se comparado a um jovem escoteiro que tem nível socioeconômico alto. Podemos fazer essa conclusão também se baseando na razão de chances:
+
+```{r}
+exp(1.29371)
+```
+
+Logo, a chance de um jovem escoteiro de classe média ser classificado como deliquente é cerca de 3,65 vezes mais a chance de um jovem escoteiro de classe alta.
+
+##### (d.4)
+
+Por último, podemos observar uma breve análise diagnóstico do modelo proposto.
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo)
+```
+
+Além disso, com o gráfico de Distância de Cook, apresentado na Figura 1, conseguimos detectar pontos influentes, ou seja, pontos que são capazes de alterar a inferência. Em nosso caso, as observações 536, 544 e 545 se mostraram influentes na estimativa da reta ajustada.
+
+```{r, echo = FALSE, fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Distância de Cook.', out.width = "70%"}
+plot(modelo, which = 4)
+```
+
+
+
+
+

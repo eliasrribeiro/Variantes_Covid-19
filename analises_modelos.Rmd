@@ -1,0 +1,851 @@
+---
+title: "Análises modelos"
+output:
+  html_document:
+    df_print: paged
+date: '2022-07-20'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+```{r,echo=FALSE,warning=FALSE,message=FALSE}
+library(logbin)
+library(summarytools)
+library(modelsummary)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(glmtoolbox)
+library(glmx)
+library(LDdiag)
+library(hnp)
+library(patchwork)
+```
+
+## Os dados
+
+```{r}
+dados5 <- readRDS("dados6.rds")
+
+#criando variável chamada variante(original,gama,delta,omicron)
+in_gama <- as.Date("01-02-2021",format="%d-%m-%Y")
+in_delta <- as.Date("01-08-2021",format="%d-%m-%Y")
+in_ommi <- as.Date("01-01-2022",format="%d-%m-%Y")
+
+dados5 <- dados5 %>% 
+  mutate(variante = case_when(dt_sint < in_gama ~ "original",
+                              dt_sint >= in_gama & dt_sint < in_delta ~ "gama",
+                              dt_sint >= in_delta & dt_sint < in_ommi ~ "delta",
+                              dt_sint >= in_ommi ~ "omicron")) %>% 
+  mutate(month_year = paste(formatC(month(dt_sint), width=2, format="d", flag="0"),
+                            year(dt_sint),sep="/")) %>% 
+  mutate(mes = month(dt_sint))
+
+dados5 <- dados5 %>% 
+    mutate(vacina_cov = ifelse(variante == "original","não",vacina_cov)) 
+
+
+
+dados5$variante <- factor(dados5$variante,
+                          levels = c("original", "gama", "delta","omicron"))
+
+dados5 <- dados5 %>% 
+  filter(CLASSI_FIN == "5")
+
+dados5 <- dados5 %>% 
+  mutate(dt_1dose = as.Date(DOSE_1_COV, format = "%d/%m/%Y")) %>% 
+  mutate(dt_2dose = as.Date(DOSE_2_COV, format = "%d/%m/%Y")) %>% 
+  mutate(doses = case_when(
+    vacina_cov == "sim" & is.na(dt_1dose) 
+    & is.na(dt_2dose) ~ "pelo menos uma dose",
+    !is.na(dt_2dose) ~ "duas doses",
+    !is.na(dt_1dose) & is.na(dt_2dose) ~ "pelo menos uma dose",
+    TRUE ~ "não informado"))
+
+
+dados5 <- dados5 %>% 
+  mutate(vacinacov_variante2 = as.factor(case_when(
+    variante == "original" ~ "original",
+    variante == "gama" & vacina_cov == "sim" ~ "gama_vacinasim",
+    variante == "gama" & vacina_cov == "não" ~ "gama_vacinanao",
+    variante == "delta" & vacina_cov == "sim" ~ "delta_vacinasim",
+    variante == "delta" & vacina_cov == "não" ~ "delta_vacinanao",
+    variante == "omicron" & vacina_cov == "sim" ~ "omicron_vacinasim",
+    variante == "omicron" & vacina_cov == "não" ~ "omicron_vacinanao",
+    TRUE ~ NA_character_)))
+
+dados5$vacinacov_variante2 <-
+  factor(
+    dados5$vacinacov_variante2,
+    levels = c(
+      "original",
+      "gama_vacinanao",
+      "gama_vacinasim",
+      "delta_vacinanao",
+      "delta_vacinasim",
+      "omicron_vacinanao",
+      "omicron_vacinasim"
+    )
+  )
+
+dados5$vacina_cov <- as.factor(dados5$vacina_cov)
+### 22.049
+```
+
+### Variável Evolução
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(evolucao) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$evolucao) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(evolucao) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r}
+modelo2 <- logbin(data = dados5, as.factor(evolucao) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+modelo3 <- glm(data = dados5, as.factor(evolucao) ~ vacina_cov+variante, family = binomial(link="log"))
+summary(modelo3)
+```
+
+
+```{r}
+eta <- predict(modelo3)^2
+fit.modelo3 <- glm(data = dados1, as.factor(evolucao) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+pregibon.glm(modelo2)
+```
+
+```{r}
+pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo3)
+```
+
+
+### Variável Uti
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(uti) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$uti) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(uti) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r}
+modelo2 <- logbin(data = dados1, as.factor(uti) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+modelo3 <- glm(data = dados5, as.factor(uti) ~ vacina_cov+variante, family = binomial(link="log"))
+summary(modelo3)
+```
+
+
+```{r}
+eta <- predict(modelo3)^2
+fit.modelo3 <- glm(data = dados1, as.factor(uti) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+pregibon.glm(modelo2)
+```
+
+```{r}
+pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo3)
+```
+
+### Variável Suporte de ventilação
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(suport_ven) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$suport_ven) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(suport_ven) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r}
+modelo2 <- logbin(data = dados5, as.factor(suport_ven) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+# modelo3 <- glm(data = dados5, as.factor(suport_ven) ~ vacina_cov+variante, family = binomial(link="log"))
+# summary(modelo3)
+```
+
+Error: nenhum jogo válido de coeficientes tem sido encontrado: por favor, fornece valores iniciais
+
+```{r}
+# eta <- predict(modelo3)^2
+# fit.modelo3 <- glm(data = dados1, as.factor(suport_ven) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+# anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+# pregibon.glm(modelo2)
+```
+
+Error: nenhum jogo válido de coeficientes tem sido encontrado: por favor, fornece valores iniciais
+
+```{r}
+# pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+# hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+Error: nenhum jogo válido de coeficientes tem sido encontrado: por favor, fornece valores iniciais
+
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+# hnp(modelo3)
+```
+
+### Variável Febre
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(febre) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$febre) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(febre) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r}
+modelo2 <- logbin(data = dados5, as.factor(febre) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+modelo3 <- glm(data = dados5, as.factor(febre) ~ vacina_cov+variante, family = binomial(link="log"))
+summary(modelo3)
+```
+
+```{r}
+eta <- predict(modelo3)^2
+fit.modelo3 <- glm(data = dados1, as.factor(febre) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+pregibon.glm(modelo2)
+```
+
+```{r}
+pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo3)
+```
+
+### Variável Tosse
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(tosse) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$tosse) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(tosse) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r}
+modelo2 <- logbin(data = dados5, as.factor(tosse) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+modelo3 <- glm(data = dados5, as.factor(tosse) ~ vacina_cov+variante, family = binomial(link="log"))
+summary(modelo3)
+```
+
+```{r}
+eta <- predict(modelo3)^2
+fit.modelo3 <- glm(data = dados1, as.factor(tosse) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+pregibon.glm(modelo2)
+```
+
+```{r}
+pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo3)
+```
+
+
+
+### Variável Garganta
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(garganta) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$garganta) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(garganta) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r}
+modelo2 <- logbin(data = dados5, as.factor(garganta) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+modelo3 <- glm(data = dados5, as.factor(garganta) ~ vacina_cov+variante, family = binomial(link="log"))
+summary(modelo3)
+```
+
+```{r}
+eta <- predict(modelo3)^2
+fit.modelo3 <- glm(data = dados1, as.factor(garganta) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+pregibon.glm(modelo2)
+```
+
+```{r}
+pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo3)
+```
+
+
+
+### Variável Saturação
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(saturacao) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$saturacao) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(saturacao) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r}
+modelo2 <- logbin(data = dados5, as.factor(saturacao) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+modelo3 <- glm(data = dados5, as.factor(saturacao) ~ vacina_cov+variante, family = binomial(link="log"))
+summary(modelo3)
+```
+
+```{r}
+eta <- predict(modelo3)^2
+fit.modelo3 <- glm(data = dados1, as.factor(saturacao) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+pregibon.glm(modelo2)
+```
+
+```{r}
+pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo3)
+```
+
+
+### Variável Dispneia
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(dispneia) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$dispneia) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(dispneia) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r}
+modelo2 <- logbin(data = dados5, as.factor(dispneia) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+modelo3 <- glm(data = dados5, as.factor(dispneia) ~ vacina_cov+variante, family = binomial(link="log"))
+summary(modelo3)
+```
+
+```{r}
+eta <- predict(modelo3)^2
+fit.modelo3 <- glm(data = dados1, as.factor(dispneia) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+pregibon.glm(modelo2)
+```
+
+```{r}
+pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo3)
+```
+
+
+### Variável Fadiga
+
+#### Modelo Logistico
+
+```{r}
+modelo1 <- glm(data = dados5, as.factor(fadiga) ~ vacina_cov+variante, family = binomial)
+summary(modelo1)
+```
+
+```{r}
+dados1 <- dados5[!is.na(dados5$fadiga) & !is.na(dados5$vacina_cov) & !is.na(dados5$variante),]
+eta <- predict(modelo1)^2
+fit.modelo1 <- glm(data = dados1, as.factor(fadiga) ~ vacina_cov+variante+eta, family = binomial)
+anova(modelo1,fit.modelo1,test="LRT")
+```
+```{r}
+pregibon.glm(modelo1)
+```
+
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo1)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 1: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo1)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+
+
+#### Modelo Log-binomial
+
+```{r,warning=FALSE}
+modelo2 <- logbin(data = dados5, as.factor(fadiga) ~ vacina_cov+variante)
+summary(modelo2)
+```
+
+```{r}
+modelo3 <- glm(data = dados5, as.factor(fadiga) ~ vacina_cov+variante, family = binomial(link="log"))
+summary(modelo3)
+```
+
+```{r}
+eta <- predict(modelo3)^2
+fit.modelo3 <- glm(data = dados1, as.factor(fadiga) ~ vacina_cov+variante+eta, family = binomial(link="log"))
+anova(modelo3,fit.modelo3,test="LRT")
+```
+
+```{r}
+pregibon.glm(modelo2)
+```
+
+```{r}
+pregibon.glm(modelo3)
+```
+
+##### Análise de diagnóstico
+
+Primeiramente, investigamos se não existe multicolinearidade nos dados, suposição muito importante em um modelo de regressão logística. Na prática, valores do teste Fator de Inflação da Variância (VIF) que excedam 10 indicam que há um problema de colinearidade. No entanto, como podemos observar em seguida, as covariáveis obtiveram valores de VIF bem abaixo de 5. Sendo assim, a condição de não-multicolinearidade está atestada.
+
+```{r}
+car::vif(modelo2)
+```
+
+```{r,fig.align = 'center', fig.cap = 'Figura 2: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo2)
+# envelope(
+#   modelo1, standardized = TRUE,
+#   main = "", ylab = "quantis observados"
+# )
+```
+```{r,fig.align = 'center', fig.cap = 'Figura 3: Gráfico de Envelope.', out.width = "70%"}
+hnp(modelo3)
+```
+
+
