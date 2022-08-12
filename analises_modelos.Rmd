@@ -10,7 +10,7 @@ date: '2022-07-20'
 knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
 ```
 
-```{r,echo=FALSE,warning=FALSE,message=FALSE}
+```{r,echo=FALSE,warning=FALSE,message=FALSE }
 library(logbin)
 library(summarytools)
 library(modelsummary)
